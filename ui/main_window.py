@@ -8,6 +8,7 @@
 # 5. 设为零点后，后续检测中心会与该参考中心比较，并给出 RIGHT/DOWN 等调整提示
 from __future__ import annotations
 
+import copy
 import math
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
@@ -40,10 +41,12 @@ from PyQt6.QtWidgets import (
 
 from core.app_state import AppConfig, CircleConfig
 from core.config_manager import ConfigManager
+from core.environment_check import EnvironmentReport, run_environment_check
 from core.i18n import I18nManager
 from core.vision_engine import VisionEngine
 from cameras.factory import list_camera_devices
 from cameras.zwo_camera import ZWOCamera
+from ui.environment_dialog import EnvironmentCheckDialog
 from ui.interactive_label import InteractiveVideoLabel
 from ui.video_thread import VideoThread
 
@@ -115,6 +118,8 @@ class MainWindow(QMainWindow):
 
         self.thread: Optional[VideoThread] = None
         self.current_frame: Optional[np.ndarray] = None
+        self.environment_dialog: Optional[EnvironmentCheckDialog] = None
+        self._startup_environment_report: Optional[EnvironmentReport] = None
 
         # 三圈使用不同圆心：外圈为参考中心；中圈/内圈为各自识别后的目标圆心
         self.middle_xy: Tuple[int, int] = (int(self.config.circle2_center_x), int(self.config.circle2_center_y))
@@ -162,6 +167,12 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._sync_all_controls_from_config()
         self._apply_language()
+
+        # 在相机线程启动前做一次完整环境自检，避免 USB 探测与采集线程争抢设备。
+        # 正常环境不弹窗；只有存在阻断性错误时，主窗口显示后自动打开详细报告。
+        self._startup_environment_report = self._collect_environment_report(probe_hardware=True)
+        if self._startup_environment_report.has_errors:
+            QTimer.singleShot(0, self._show_startup_environment_issues)
         self.start_camera()
 
 
@@ -422,6 +433,10 @@ class MainWindow(QMainWindow):
         row1.addWidget(self.btn_stop)
         row1.addWidget(self.btn_reset)
         layout.addLayout(row1)
+
+        self.btn_environment_check = QPushButton()
+        self.btn_environment_check.clicked.connect(self.show_environment_check)
+        layout.addWidget(self.btn_environment_check)
 
         self.panel_layout.addWidget(self.control_group)
 
@@ -965,6 +980,7 @@ class MainWindow(QMainWindow):
         self.btn_start.setText(t("start"))
         self.btn_stop.setText(t("stop"))
         self.btn_reset.setText(t("reset_center"))
+        self.btn_environment_check.setText(t("environment_check"))
 
         self.camera_group.setTitle(t("camera"))
         self.camera_basic_group.setTitle(t("camera_basic"))
@@ -1040,6 +1056,54 @@ class MainWindow(QMainWindow):
         self.btn_load.setText(t("load"))
         self._update_camera_brand_visibility()
         self._update_status_labels()
+
+    # ------------------------------------------------------------------
+    # 环境检测
+    # ------------------------------------------------------------------
+    def _environment_config_snapshot(self) -> AppConfig:
+        """生成用于检测的配置快照，包含尚未点击“应用相机”的当前 UI 选择。"""
+        snapshot = copy.deepcopy(self.config)
+        if hasattr(self, "camera_type_combo"):
+            snapshot.camera_type = self.camera_type_combo.currentText().strip().lower()
+        if hasattr(self, "camera_device_combo"):
+            snapshot.camera_id = self._current_camera_id()
+        if hasattr(self, "zwo_dll_edit"):
+            snapshot.zwo_dll_path = self.zwo_dll_edit.text().strip()
+        return snapshot
+
+    def _collect_environment_report(self, probe_hardware: bool = True) -> EnvironmentReport:
+        """运行环境检测并返回结构化报告。"""
+        snapshot = self._environment_config_snapshot()
+        camera_running = bool(self.thread and self.thread.isRunning())
+        return run_environment_check(
+            snapshot,
+            self.config_manager.filepath,
+            language=self.config.language,
+            probe_hardware=probe_hardware,
+            camera_is_running=camera_running,
+        )
+
+    def _present_environment_report(self, report: EnvironmentReport) -> None:
+        """显示环境检测窗口；重复检测时复用同一个窗口。"""
+        if self.environment_dialog is None:
+            self.environment_dialog = EnvironmentCheckDialog(report, self)
+            self.environment_dialog.rerun_requested.connect(self.show_environment_check)
+        else:
+            self.environment_dialog.set_report(report)
+        self.environment_dialog.show()
+        self.environment_dialog.raise_()
+        self.environment_dialog.activateWindow()
+
+    def _show_startup_environment_issues(self) -> None:
+        """启动自检仅在存在阻断错误时自动显示。"""
+        report = self._startup_environment_report
+        if report is not None and report.has_errors:
+            self._present_environment_report(report)
+
+    def show_environment_check(self) -> None:
+        """由用户主动运行环境检测，并显示可复制的完整报告。"""
+        report = self._collect_environment_report(probe_hardware=True)
+        self._present_environment_report(report)
 
     # ------------------------------------------------------------------
     # 相机控制
