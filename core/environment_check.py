@@ -292,6 +292,40 @@ def _add_dependency_checks(report: EnvironmentReport) -> None:
         )
 
 
+
+def _add_gui_runtime_check(report: EnvironmentReport) -> None:
+    """验证当前进程中的 Qt 原生运行时确实已经加载，而不只检查模块是否存在。"""
+    is_en = report.language == "en"
+    try:
+        from PyQt6 import QtCore, QtWidgets
+
+        pyqt_version = getattr(QtCore, "PYQT_VERSION_STR", "unknown")
+        qt_version = getattr(QtCore, "QT_VERSION_STR", "unknown")
+        report.add(
+            "qt_runtime_import",
+            "Qt native runtime" if is_en else "Qt 原生运行时",
+            "pass",
+            (
+                f"PyQt6.QtWidgets loaded successfully: PyQt {pyqt_version} / Qt {qt_version}"
+                if is_en
+                else f"PyQt6.QtWidgets 已真实加载：PyQt {pyqt_version} / Qt {qt_version}"
+            ),
+            f"QtCore={getattr(QtCore, '__file__', '')} | QtWidgets={getattr(QtWidgets, '__file__', '')}",
+        )
+    except BaseException as exc:
+        report.add(
+            "qt_runtime_import",
+            "Qt native runtime" if is_en else "Qt 原生运行时",
+            "error",
+            "PyQt6.QtWidgets failed to load" if is_en else "PyQt6.QtWidgets 底层 DLL 加载失败",
+            repr(exc),
+            (
+                "Repair Microsoft Visual C++ 2015–2022 Redistributable x64 and verify the complete _internal folder."
+                if is_en
+                else "请修复 Microsoft Visual C++ 2015–2022 x64 运行库，并确认完整保留 _internal 文件夹"
+            ),
+        )
+
 def _add_storage_checks(report: EnvironmentReport, config_path: str) -> None:
     is_en = report.language == "en"
     config_file = Path(config_path)
@@ -502,6 +536,7 @@ def run_environment_check(
     report = EnvironmentReport(language=language)
     _add_system_checks(report)
     _add_dependency_checks(report)
+    _add_gui_runtime_check(report)
     _add_storage_checks(report, config_path)
     _add_camera_check(report, config, probe_hardware, camera_is_running)
     return report
