@@ -609,8 +609,8 @@ class MainWindow(QMainWindow):
 
         # 外圈：参考中心位置调节 + 外圈边缘拟合
         outer_form: QFormLayout = self.circle1_group.layout()  # type: ignore[assignment]
-        self.h_offset_slider, self.h_offset_value = self._make_slider(-1500, 1500, self.config.horizontal_offset, self._on_h_offset)
-        self.v_offset_slider, self.v_offset_value = self._make_slider(-1500, 1500, self.config.vertical_offset, self._on_v_offset)
+        self.h_offset_slider, self.h_offset_value = self._make_outer_editable_slider(-1500, 1500, self.config.horizontal_offset, self._on_h_offset)
+        self.v_offset_slider, self.v_offset_value = self._make_outer_editable_slider(-1500, 1500, self.config.vertical_offset, self._on_v_offset)
         outer_form.addRow(QLabel(), self._slider_row(self.h_offset_slider, self.h_offset_value))
         outer_form.addRow(QLabel(), self._slider_row(self.v_offset_slider, self.v_offset_value))
         self.h_offset_label = outer_form.labelForField(self.h_offset_slider.parent())
@@ -628,8 +628,8 @@ class MainWindow(QMainWindow):
 
         # 中圈：做法与内圈一致，用于吸附圆形亮斑边缘，也可切换为与外圈同心辅助显示
         middle_form: QFormLayout = self.circle2_group.layout()  # type: ignore[assignment]
-        self.middle_x_slider, self.middle_x_value = self._make_slider(-1500, 1500, self.config.circle2_center_x - self.config.center_x, self._on_middle_x)
-        self.middle_y_slider, self.middle_y_value = self._make_slider(-1500, 1500, self.config.circle2_center_y - self.config.center_y, self._on_middle_y)
+        self.middle_x_slider, self.middle_x_value = self._make_editable_slider(-1500, 1500, self.config.circle2_center_x - self.config.center_x, self._on_middle_x)
+        self.middle_y_slider, self.middle_y_value = self._make_editable_slider(-1500, 1500, self.config.circle2_center_y - self.config.center_y, self._on_middle_y)
         middle_form.addRow(QLabel(), self._slider_row(self.middle_x_slider, self.middle_x_value))
         middle_form.addRow(QLabel(), self._slider_row(self.middle_y_slider, self.middle_y_value))
         self.middle_x_label = middle_form.labelForField(self.middle_x_slider.parent())
@@ -652,8 +652,8 @@ class MainWindow(QMainWindow):
 
         # 内圈：红色小圆边缘位置调节 + 边缘吸附 + 持续吸附
         inner_form: QFormLayout = self.circle3_group.layout()  # type: ignore[assignment]
-        self.inner_x_slider, self.inner_x_value = self._make_slider(-1500, 1500, self.config.circle3_center_x - self.config.center_x, self._on_inner_x)
-        self.inner_y_slider, self.inner_y_value = self._make_slider(-1500, 1500, self.config.circle3_center_y - self.config.center_y, self._on_inner_y)
+        self.inner_x_slider, self.inner_x_value = self._make_editable_slider(-1500, 1500, self.config.circle3_center_x - self.config.center_x, self._on_inner_x)
+        self.inner_y_slider, self.inner_y_value = self._make_editable_slider(-1500, 1500, self.config.circle3_center_y - self.config.center_y, self._on_inner_y)
         inner_form.addRow(QLabel(), self._slider_row(self.inner_x_slider, self.inner_x_value))
         inner_form.addRow(QLabel(), self._slider_row(self.inner_y_slider, self.inner_y_value))
         self.inner_x_label = inner_form.labelForField(self.inner_x_slider.parent())
@@ -676,8 +676,8 @@ class MainWindow(QMainWindow):
 
         # 副镜圈：做法与内圈一致，用于独立吸附副镜边缘，并把副镜圆心调到外圈参考中心
         secondary_form: QFormLayout = self.circle4_group.layout()  # type: ignore[assignment]
-        self.secondary_x_slider, self.secondary_x_value = self._make_slider(-1500, 1500, self.config.circle4_center_x - self.config.center_x, self._on_secondary_x)
-        self.secondary_y_slider, self.secondary_y_value = self._make_slider(-1500, 1500, self.config.circle4_center_y - self.config.center_y, self._on_secondary_y)
+        self.secondary_x_slider, self.secondary_x_value = self._make_editable_slider(-1500, 1500, self.config.circle4_center_x - self.config.center_x, self._on_secondary_x)
+        self.secondary_y_slider, self.secondary_y_value = self._make_editable_slider(-1500, 1500, self.config.circle4_center_y - self.config.center_y, self._on_secondary_y)
         secondary_form.addRow(QLabel(), self._slider_row(self.secondary_x_slider, self.secondary_x_value))
         secondary_form.addRow(QLabel(), self._slider_row(self.secondary_y_slider, self.secondary_y_value))
         self.secondary_x_label = secondary_form.labelForField(self.secondary_x_slider.parent())
@@ -885,7 +885,83 @@ class MainWindow(QMainWindow):
         slider.valueChanged.connect(lambda v: (value_label.setText(str(v)), callback(v)))
         return slider, value_label
 
-    def _slider_row(self, slider: QSlider, value_label: QLabel) -> QWidget:
+    def _make_editable_slider(
+        self,
+        minimum: int,
+        maximum: int,
+        value: int,
+        callback: Callable[[int], None],
+    ) -> Tuple[QSlider, QSpinBox]:
+        """创建“整数滑条 + 整数输入框”的双向位置控制。"""
+        slider = DampedSlider(Qt.Orientation.Horizontal)
+        slider.setRange(minimum, maximum)
+        slider.setValue(int(value))
+
+        value_input = QSpinBox()
+        value_input.setRange(minimum, maximum)
+        value_input.setValue(int(value))
+        value_input.setSingleStep(1)
+        value_input.setKeyboardTracking(False)
+        value_input.setFixedWidth(72)
+        value_input.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        def on_slider_changed(new_value: int) -> None:
+            if value_input.value() != int(new_value):
+                value_input.setValue(int(new_value))
+            callback(int(new_value))
+
+        slider.valueChanged.connect(on_slider_changed)
+        value_input.valueChanged.connect(lambda new_value: slider.setValue(int(new_value)))
+        return slider, value_input
+
+    def _make_outer_editable_slider(
+        self,
+        minimum: int,
+        maximum: int,
+        value: float,
+        callback: Callable[[float], None],
+    ) -> Tuple[QSlider, QDoubleSpinBox]:
+        """创建外圈专用位置控制。
+
+        滑条本身仍按整数像素移动；右侧输入框允许输入两位小数。
+        手动输入小数时，滑条只移动到最接近的整数刻度，但业务参数保留原始小数；
+        用户再次拖动滑条后，参数和输入框都会恢复为对应的整数值。
+        """
+        slider = DampedSlider(Qt.Orientation.Horizontal)
+        slider.setRange(minimum, maximum)
+        slider.setValue(int(round(float(value))))
+
+        value_input = QDoubleSpinBox()
+        value_input.setRange(float(minimum), float(maximum))
+        value_input.setDecimals(2)
+        value_input.setSingleStep(0.1)
+        value_input.setValue(float(value))
+        value_input.setKeyboardTracking(False)
+        # 外圈输入框需容纳负数、两位小数和右侧步进按钮。
+        # 96 px 可避免数字被按钮遮挡，同时尽量把横向空间留给位置滑条。
+        # 其他圆圈的整数输入框尺寸保持原样。
+        value_input.setFixedWidth(96)
+        value_input.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        def on_slider_changed(new_value: int) -> None:
+            previous = value_input.blockSignals(True)
+            value_input.setValue(float(new_value))
+            value_input.blockSignals(previous)
+            callback(float(new_value))
+
+        def on_input_changed(new_value: float) -> None:
+            slider_value = int(round(float(new_value)))
+            slider_value = max(slider.minimum(), min(slider.maximum(), slider_value))
+            previous = slider.blockSignals(True)
+            slider.setValue(slider_value)
+            slider.blockSignals(previous)
+            callback(float(new_value))
+
+        slider.valueChanged.connect(on_slider_changed)
+        value_input.valueChanged.connect(on_input_changed)
+        return slider, value_input
+
+    def _slider_row(self, slider: QSlider, value_label: QWidget) -> QWidget:
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1437,10 +1513,10 @@ class MainWindow(QMainWindow):
         self.auto_focus_check.setChecked(bool(self.config.camera_auto_focus))
         self.focus_spin.setValue(int(self.config.camera_focus))
         self.focus_spin.setEnabled(not bool(self.config.camera_auto_focus))
-        self.h_offset_slider.setValue(self.config.horizontal_offset)
-        self.v_offset_slider.setValue(self.config.vertical_offset)
-        self.h_offset_value.setText(str(self.config.horizontal_offset))
-        self.v_offset_value.setText(str(self.config.vertical_offset))
+        self.h_offset_slider.setValue(int(round(float(self.config.horizontal_offset))))
+        self.v_offset_slider.setValue(int(round(float(self.config.vertical_offset))))
+        self.h_offset_value.setValue(float(self.config.horizontal_offset))
+        self.v_offset_value.setValue(float(self.config.vertical_offset))
         self.zoom_slider.setValue(self.config.zoom_percent)
         self.zoom_value.setText(str(self.config.zoom_percent))
         self.view_pan_x_slider.setValue(int(self.config.view_pan_x))
@@ -1507,7 +1583,7 @@ class MainWindow(QMainWindow):
         ]:
             value = int(max(slider.minimum(), min(slider.maximum(), value)))
             slider.setValue(value)
-            label.setText(str(value))
+            label.setValue(int(value))
         self._updating_ui = False
 
     def _set_center_from_mouse(self, x: int, y: int) -> None:
@@ -1598,24 +1674,26 @@ class MainWindow(QMainWindow):
 
     def _sync_offset_sliders(self) -> None:
         self._updating_ui = True
-        self.h_offset_slider.setValue(int(max(self.h_offset_slider.minimum(), min(self.h_offset_slider.maximum(), self.config.horizontal_offset))))
-        self.v_offset_slider.setValue(int(max(self.v_offset_slider.minimum(), min(self.v_offset_slider.maximum(), self.config.vertical_offset))))
-        self.h_offset_value.setText(str(self.config.horizontal_offset))
-        self.v_offset_value.setText(str(self.config.vertical_offset))
+        h_value = float(max(self.h_offset_slider.minimum(), min(self.h_offset_slider.maximum(), self.config.horizontal_offset)))
+        v_value = float(max(self.v_offset_slider.minimum(), min(self.v_offset_slider.maximum(), self.config.vertical_offset)))
+        self.h_offset_slider.setValue(int(round(h_value)))
+        self.v_offset_slider.setValue(int(round(v_value)))
+        self.h_offset_value.setValue(h_value)
+        self.v_offset_value.setValue(v_value)
         self._updating_ui = False
 
-    def _on_h_offset(self, value: int) -> None:
+    def _on_h_offset(self, value: float) -> None:
         if self._updating_ui or self.config.reference_locked:
             return
-        self.config.horizontal_offset = value
+        self.config.horizontal_offset = float(value)
         self.config.update_center_from_offsets()
         self._sync_target_sliders()
         self._update_status_labels()
 
-    def _on_v_offset(self, value: int) -> None:
+    def _on_v_offset(self, value: float) -> None:
         if self._updating_ui or self.config.reference_locked:
             return
-        self.config.vertical_offset = value
+        self.config.vertical_offset = float(value)
         self.config.update_center_from_offsets()
         self._sync_target_sliders()
         self._update_status_labels()
@@ -1655,7 +1733,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "middle_concentric_check"):
             return
         enabled = bool(self.config.middle_concentric_with_outer)
-        for widget in [self.middle_x_slider, self.middle_y_slider, self.btn_snap_middle_edge, self.middle_track_check]:
+        for widget in [self.middle_x_slider, self.middle_y_slider, self.middle_x_value, self.middle_y_value, self.btn_snap_middle_edge, self.middle_track_check]:
             widget.setEnabled(not enabled)
         if enabled:
             self._apply_middle_concentric_position()
@@ -1692,7 +1770,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "inner_concentric_check"):
             return
         enabled = bool(self.config.inner_concentric_with_outer)
-        for widget in [self.inner_x_slider, self.inner_y_slider, self.btn_snap_inner_edge, self.inner_track_check]:
+        for widget in [self.inner_x_slider, self.inner_y_slider, self.inner_x_value, self.inner_y_value, self.btn_snap_inner_edge, self.inner_track_check]:
             widget.setEnabled(not enabled)
         if enabled:
             self._apply_inner_concentric_position()
@@ -1727,7 +1805,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "secondary_concentric_check"):
             return
         enabled = bool(self.config.secondary_concentric_with_outer)
-        for widget in [self.secondary_x_slider, self.secondary_y_slider, self.btn_snap_secondary_edge, self.secondary_track_check]:
+        for widget in [self.secondary_x_slider, self.secondary_y_slider, self.secondary_x_value, self.secondary_y_value, self.btn_snap_secondary_edge, self.secondary_track_check]:
             widget.setEnabled(not enabled)
         if enabled:
             self._apply_secondary_concentric_position()
@@ -1747,7 +1825,7 @@ class MainWindow(QMainWindow):
         # 线宽和颜色始终允许调，因为它们只影响显示，不改变参考中心
         outer["thickness"].setEnabled(True)
         outer["color_button"].setEnabled(True)
-        for widget in [self.h_offset_slider, self.v_offset_slider, self.btn_set_reference]:
+        for widget in [self.h_offset_slider, self.v_offset_slider, self.h_offset_value, self.v_offset_value, self.btn_set_reference]:
             widget.setEnabled(not locked)
         # 外圈参考圆心一旦锁定，吸附按钮也必须禁用
         # 用户需要点击“重置圆心”解除锁定后，才能开始新一轮三次吸附，
@@ -2453,8 +2531,8 @@ class MainWindow(QMainWindow):
         if w != self.config.frame_width or h != self.config.frame_height:
             self.config.frame_width = w
             self.config.frame_height = h
-            self.config.center_x = int(max(0, min(w - 1, self.config.center_x)))
-            self.config.center_y = int(max(0, min(h - 1, self.config.center_y)))
+            self.config.center_x = float(max(0.0, min(float(w - 1), float(self.config.center_x))))
+            self.config.center_y = float(max(0.0, min(float(h - 1), float(self.config.center_y))))
             self.config.circle2_center_x = int(max(0, min(w - 1, self.config.circle2_center_x)))
             self.config.circle2_center_y = int(max(0, min(h - 1, self.config.circle2_center_y)))
             self.config.circle3_center_x = int(max(0, min(w - 1, self.config.circle3_center_x)))
@@ -2563,7 +2641,7 @@ class MainWindow(QMainWindow):
         self.status_dev.setText(f"{t('dev')}: {dist:.2f}")
         self.status_offset.setText(f"{t('offset')}: {dx:+.1f}, {dy:+.1f}")
         self.status_guide.setText(f"{t('guide')}: {VisionEngine.guide_text(self.config, self.i18n, self.detected_xy)}")
-        self.status_reference.setText(f"{t('reference')}: {self.config.center_x:+d}, {self.config.center_y:+d}")
+        self.status_reference.setText(f"{t('reference')}: {float(self.config.center_x):+.2f}, {float(self.config.center_y):+.2f}")
         if self.last_status_detail:
             self.status_text.setText(f"Status: {t(self.last_status_key)}\n{self.last_status_detail}")
             self.status_text.setWordWrap(True)

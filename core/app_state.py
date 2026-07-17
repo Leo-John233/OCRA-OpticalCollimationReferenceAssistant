@@ -64,10 +64,10 @@ class AppConfig:
 
     # Circle 1 外圈参考中心/零点真实圆心 = 图像中心 + 水平/垂直偏移
     # 光轴调整时，内圈检测亮斑会与这个参考中心比较，生成 dx/dy/dist/Guide
-    center_x: int = 640
-    center_y: int = 360
-    horizontal_offset: int = 0
-    vertical_offset: int = 0
+    center_x: float = 640.0
+    center_y: float = 360.0
+    horizontal_offset: float = 0.0
+    vertical_offset: float = 0.0
     reference_locked: bool = False  # 是否已经点击过“设为零点”
 
     # 显示缩放100=不放大，200=2倍放大，400=4倍放大
@@ -142,8 +142,8 @@ class AppConfig:
 
     def update_offsets_from_center(self) -> None:
         """根据绝对参考中心坐标反算相对画面中心的偏移"""
-        self.horizontal_offset = int(self.center_x - self.frame_width // 2)
-        self.vertical_offset = int(self.center_y - self.frame_height // 2)
+        self.horizontal_offset = float(self.center_x - self.frame_width // 2)
+        self.vertical_offset = float(self.center_y - self.frame_height // 2)
 
     def align_detected_centers_to_reference_if_default(self) -> None:
         """旧配置或首次启动时，让中圈/内圈检测中心先落在外圈参考中心上"""
