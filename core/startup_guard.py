@@ -24,6 +24,30 @@ from typing import Iterable, Optional
 
 _STATUS_RANK = {"pass": 0, "info": 1, "warning": 2, "error": 3}
 _DLL_DIRECTORY_HANDLES: list[object] = []
+_PRELOADED_SYSTEM_DLLS: list[object] = []
+
+
+def preload_windows_system_icu() -> tuple[Optional[Path], Optional[str]]:
+    """Load the Windows ICU before Conda can satisfy Qt with its incompatible ICU."""
+    if platform.system().lower() != "windows":
+        return None, None
+
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    icu_path = system_root / "System32" / "icuuc.dll"
+    if not icu_path.is_file():
+        return None, f"Windows ICU not found: {icu_path}"
+
+    try:
+        # LOAD_LIBRARY_SEARCH_SYSTEM32 prevents a same-named Conda DLL from
+        # being selected while resolving this system library's dependencies.
+        handle = ctypes.WinDLL(str(icu_path), winmode=0x00000800)
+    except OSError as exc:
+        return None, f"{icu_path}: {exc}"
+
+    # Keep the library loaded for the lifetime of the process. Qt6Core.dll
+    # will then reuse this module instead of Conda's incompatible icuuc.dll.
+    _PRELOADED_SYSTEM_DLLS.append(handle)
+    return icu_path, None
 
 
 @dataclass(frozen=True)
@@ -418,6 +442,22 @@ def run_startup_preflight() -> StartupReport:
         f"executable={sys.executable}",
         "请使用 64 位 Python 3.12 重新构建" if sys.version_info < (3, 10) else "",
     )
+
+    icu_path, icu_error = preload_windows_system_icu()
+    if icu_path is not None:
+        report.add(
+            "windows_icu",
+            "pass",
+            "已预加载 Windows ICU，避免 Conda ICU 与 PyQt6 冲突",
+            str(icu_path),
+        )
+    elif icu_error:
+        report.add(
+            "windows_icu",
+            "warning",
+            "无法预加载 Windows ICU",
+            icu_error,
+        )
 
     _check_windows_runtime(report)
     dll_dirs, plugin_dirs = configure_windows_dll_search()
