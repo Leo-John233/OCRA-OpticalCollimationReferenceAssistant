@@ -105,7 +105,10 @@ OCRA 是一款面向反射式望远镜光轴准直的桌面应用它通过 ZWO A
 .
 ├─ main.py                         # 程序入口
 ├─ requirements.txt                # Python 依赖
-├─ build_exe.bat                   # Windows EXE 一键打包脚本
+├─ py_build/
+│  ├─ build_exe.bat                # Windows 目录版打包脚本
+│  ├─ build_single_exe.bat         # Windows 单文件版打包脚本
+│  └─ OCRA_icon.ico                # 程序图标
 ├─ ASICamera2.dll                  # ZWO ASI SDK DLL（第三方组件）
 ├─ LICENSE                         # Mozilla Public License 2.0
 ├─ THIRD_PARTY_NOTICES.md          # 第三方组件声明
@@ -236,44 +239,57 @@ OCRA 是一款面向反射式望远镜光轴准直的桌面应用它通过 ZWO A
 
 ## 打包 Windows EXE
 
-项目提供 `build_exe.bat`，使用 PyInstaller 的 `onedir` 模式构建 Windows 程序
+项目提供两个通用 PyInstaller 脚本：
+
+- `py_build/build_exe.bat`：目录版，启动较快，发布时需要复制整个 `py_build/dist/OCRA` 目录
+- `py_build/build_single_exe.bat`：单文件版，启动时需要先解压到临时目录
+
+脚本按以下顺序选择构建环境：
+
+1. 优先使用当前已激活的 Conda 或普通虚拟环境
+2. 没有激活虚拟环境时，复用 `py_build/.build_env`
+3. 本地构建环境不存在时，从系统 Python 自动创建 `py_build/.build_env`
+
+如果依赖缺失，脚本会自动安装 `requirements.txt` 和 PyInstaller 中的构建依赖没有虚拟环境时，只需要系统中已安装 64 位 Python 3.10 或更高版本首次安装依赖需要能够访问 Python 软件包源
 
 ### 一键打包
 
-直接双击：
+可以直接使用已经激活的虚拟环境：
+
+```powershell
+conda activate Python3.13
+```
+
+也可以不激活任何虚拟环境，脚本会自动创建并复用本地构建环境
+
+构建目录版：
+
+```powershell
+.\py_build\build_exe.bat
+```
+
+构建单文件版：
+
+```powershell
+.\py_build\build_single_exe.bat
+```
+
+建议在项目目录的终端中运行脚本，以便查看完整构建日志脚本会检查 Python 版本、64 位架构、构建依赖和必要文件，并通过当前选定解释器的 `python -m PyInstaller` 执行打包
+
+构建结果分别位于：
 
 ```text
-build_exe.bat
+py_build\dist\OCRA\OCRA.exe
+py_build\dist_single\OCRA_Single.exe
 ```
 
-或在项目目录的 CMD 中运行：
-
-```bat
-build_exe.bat
-```
-
-脚本会自动：
-
-1. 检查 64 位 Python 3.13、3.12 或默认 Python
-2. 创建或复用 `.venv`
-3. 安装项目依赖和 PyInstaller
-4. 清理旧的 `build` 与 `dist`
-5. 打包 `config` 和可选的 `ASICamera2.dll`
-6. 生成无控制台窗口的程序
-
-构建结果位于：
+发布目录版时必须复制整个目录：
 
 ```text
-dist\OCRA\OCRA.exe
+py_build\dist\OCRA\
 ```
 
-发布时必须复制整个目录：
-
-```text
-dist\OCRA\
-```
-
-不能只复制 `OCRA.exe`，因为 PyQt6、OpenCV、Python Runtime、配置文件和相机 DLL 等运行文件位于同一程序目录中
+发布单文件版时，建议把 `py_build/dist_single/config` 与 `OCRA_Single.exe` 一起提供，以保留项目的默认配置目录版不能只复制 `OCRA.exe`，因为 PyQt6、OpenCV、Python Runtime 和相机 DLL 等运行文件位于同一程序目录中
 
 ---
 

@@ -105,7 +105,10 @@ The condition number is used to determine whether sample points are concentrated
 .
 ├─ main.py                         # Program entry point
 ├─ requirements.txt                # Python dependencies
-├─ build_exe.bat                   # One-click Windows EXE build script
+├─ py_build/
+│  ├─ build_exe.bat                # Windows folder-distribution build script
+│  ├─ build_single_exe.bat         # Windows single-file build script
+│  └─ OCRA_icon.ico                # Application icon
 ├─ ASICamera2.dll                  # ZWO ASI SDK DLL (third-party component)
 ├─ LICENSE                         # Mozilla Public License 2.0
 ├─ THIRD_PARTY_NOTICES.md          # Third-party component notices
@@ -236,44 +239,57 @@ If you are unsure about the meaning of a parameter, it is recommended to adjust 
 
 ## Packaging a Windows EXE
 
-The project provides `build_exe.bat`, which uses PyInstaller's `onedir` mode to build the Windows application
+The project provides two general-purpose PyInstaller scripts:
+
+- `py_build/build_exe.bat`: folder distribution with faster startup; distribute the entire `py_build/dist/OCRA` directory
+- `py_build/build_single_exe.bat`: single-file distribution that extracts to a temporary directory during startup
+
+The scripts select the build environment in this order:
+
+1. Use the currently active Conda or standard virtual environment
+2. Reuse `py_build/.build_env` when no virtual environment is active
+3. Create `py_build/.build_env` from an installed system Python when the local build environment does not exist
+
+If dependencies are missing, the scripts install the project requirements and PyInstaller automatically. Without an existing virtual environment, only a system installation of 64-bit Python 3.10 or newer is required. The first dependency installation requires access to a Python package index.
 
 ### One-Click Build
 
-Double-click:
+You may use an already activated virtual environment:
 
-```text
-build_exe.bat
+```powershell
+conda activate Python3.13
 ```
 
-Or run it in CMD from the project directory:
+You may also run without activating a virtual environment. The scripts create and reuse the local build environment automatically.
 
-```bat
-build_exe.bat
+Build the folder distribution:
+
+```powershell
+.\py_build\build_exe.bat
 ```
 
-The script automatically:
+Build the single-file distribution:
 
-1. Checks for 64-bit Python 3.13, 3.12, or the default Python
-2. Creates or reuses `.venv`
-3. Installs project dependencies and PyInstaller
-4. Cleans the old `build` and `dist` directories
-5. Packages `config` and the optional `ASICamera2.dll`
-6. Generates an application without a console window
+```powershell
+.\py_build\build_single_exe.bat
+```
 
-The build output is located at:
+Run the scripts from a terminal in the project directory to retain the complete build log. They validate the Python version, 64-bit architecture, build dependencies, and required files, then invoke `python -m PyInstaller` through the selected interpreter.
+
+The build outputs are located at:
 
 ```text
-dist\OCRA\OCRA.exe
+py_build\dist\OCRA\OCRA.exe
+py_build\dist_single\OCRA_Single.exe
 ```
 
 When distributing the application, copy the entire directory:
 
 ```text
-dist\OCRA\
+py_build\dist\OCRA\
 ```
 
-Do not copy only `OCRA.exe`, because PyQt6, OpenCV, the Python Runtime, configuration files, camera DLLs, and other runtime files are located in the same application directory
+For the single-file distribution, provide `py_build/dist_single/config` with `OCRA_Single.exe` to retain the project's default configuration. Do not copy only `OCRA.exe` from the folder distribution, because PyQt6, OpenCV, the Python runtime, and camera DLLs are stored in the same application directory.
 
 ---
 
