@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-# 文件说明：ZWO ASI 相机后端直接通过 ctypes 调用 ZWO 官方 SDK 的 ASICamera2.dll
-# 设计逻辑：
-# 1. 不依赖第三方 Python wrapper（例如 zwoasi）只要系统里能找到正确位数的 ASICamera2.dll 即可
-# 2. 枚举真实插入的 ASI 相机，UI 显示“相机设备”下拉框，避免让用户手填编号
-# 3. 支持曝光、增益和自动曝光参数，并在打开相机时写入 SDK
-# 4. 对常见错误给出明确提示：64 位 Python 不能加载 SysWOW64 里的 32 位 DLL
+"""通过 ctypes 和 ZWO 官方 SDK 驱动 ASI 相机
+
+模块直接加载与 Python 位数匹配的 ``ASICamera2.dll``，不依赖第三方包装库
+它负责搜索 SDK、枚举设备、配置曝光和增益，并读取连续视频帧
+"""
 from __future__ import annotations
 
 import ctypes
@@ -21,7 +20,7 @@ import numpy as np
 from .base_camera import BaseCamera
 
 
-# ZWO SDK 常用返回值/枚举这里只声明本程序需要用到的最小集合
+# 仅声明程序使用的 ZWO SDK 返回值和枚举
 ASI_SUCCESS = 0
 ASI_IMG_RAW8 = 0
 ASI_IMG_RGB24 = 1
@@ -68,7 +67,7 @@ class ZWOCamera(BaseCamera):
     _sdk = None
     _sdk_path: ClassVar[str] = ""
     _sdk_error: ClassVar[str] = ""
-    _dll_dirs: ClassVar[list[object]] = []  # 保存 add_dll_directory 句柄，防止被 GC 释放
+    _dll_dirs: ClassVar[list[object]] = []  # 保留 DLL 目录句柄以免被垃圾回收
 
     def __init__(
         self,
@@ -81,6 +80,7 @@ class ZWOCamera(BaseCamera):
         gain: int = 400,
         auto_exposure: bool = False,
     ) -> None:
+        """保存设备、SDK 路径、画面尺寸和采集控制参数"""
         self.camera_id = int(camera_id)
         self.dll_path = dll_path.strip()
         self.width = int(width)
@@ -103,9 +103,8 @@ class ZWOCamera(BaseCamera):
     # ------------------------------------------------------------------
     @classmethod
     def _python_bits(cls) -> int:
+        """返回当前 Python 进程的位数"""
         return struct.calcsize("P") * 8
-
-
 
     @classmethod
     def _is_asicamera2(cls, path: str) -> bool:
@@ -179,7 +178,8 @@ class ZWOCamera(BaseCamera):
     def _candidate_dll_paths(cls, explicit_path: str = "") -> list[str]:
         """生成 ASICamera2.dll 候选路径
 
-        关键逻辑：
+        关键规则
+
         1. 只加载名为 ASICamera2.dll 的 SDK 入口 DLL
         2. 如果用户误选了 ASI662MM-Pro.dll 这类型号/DirectShow DLL，就在附近搜索 ASICamera2.dll，绝不直接加载误选文件
         3. 根据当前 Python 位数排序，64 位 Python 优先 x64/System32，避免误加载 x86/SysWOW64
@@ -194,7 +194,7 @@ class ZWOCamera(BaseCamera):
             elif cls._is_asicamera2(explicit):
                 candidates.append(explicit)
             else:
-                # 用户选了型号 DLL 或其他 DLL不要直接加载它，只在附近找真正的 SDK DLL
+                # 型号 DLL 或其他 DLL 不能直接加载，仅在附近搜索 SDK 入口
                 candidates.extend(cls._search_asicamera2_near(explicit))
 
         for env_name in ["ZWO_ASI_DLL", "ASICAMERA2_DLL", "ASI_CAMERA_DLL"]:
@@ -340,6 +340,7 @@ class ZWOCamera(BaseCamera):
 
     @classmethod
     def _camera_info_by_index(cls, index: int) -> Optional[ASICameraInfo]:
+        """按枚举索引读取相机属性并记录 SDK 错误"""
         if cls._sdk is None:
             return None
         info = ASICameraInfo()
@@ -375,6 +376,7 @@ class ZWOCamera(BaseCamera):
     # BaseCamera 接口实现
     # ------------------------------------------------------------------
     def open(self) -> bool:
+        """加载 SDK、打开设备、配置采集参数并启动视频流"""
         if not self._load_sdk(self.dll_path):
             self.last_error = self._sdk_error
             print(f"[ZWO] 初始化失败: {self.last_error}")
@@ -427,7 +429,7 @@ class ZWOCamera(BaseCamera):
     def _configure_roi_and_controls(self) -> None:
         """设置 ROI、图像格式、曝光和增益"""
         sdk = self._sdk
-        # 根据 CameraID 反查属性枚举函数按 index 读属性，打开函数按 CameraID 打开
+        # 枚举函数按索引读取属性，打开函数则使用 CameraID
         max_w, max_h = self.width, self.height
         supported: list[int] = []
         try:
@@ -467,7 +469,8 @@ class ZWOCamera(BaseCamera):
     def apply_controls(self, exposure_ms: float, iso_value: int = 100, gain: int = 400, auto_exposure: bool = False) -> None:
         """写入曝光、ISO/亮度偏置和增益
 
-        ZWO ASI 相机没有传统单反/手机相机意义上的 ISO为了让 UI 中的
+        ZWO ASI 相机没有传统单反或手机相机意义上的 ISO
+        为使界面中的
         “ISO / 曝光 / 增益”成为三个独立控制项，这里把 ISO/亮度项映射为
         ZWO SDK 的 ASI_OFFSET，也就是黑电平/亮度偏置；增益仍然单独写入 ASI_GAIN
         """
@@ -483,6 +486,7 @@ class ZWOCamera(BaseCamera):
         self._sdk.ASISetControlValue(self.camera_id, ASI_GAIN, self.gain, 0)
 
     def read_frame(self) -> Tuple[bool, Optional[np.ndarray]]:
+        """短时轮询 SDK 视频流并将画面转换为 BGR 格式"""
         if not self.opened or self._sdk is None or self._buffer is None:
             return False, None
         try:
@@ -495,7 +499,7 @@ class ZWOCamera(BaseCamera):
             ptr = self._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_ubyte))
             ret = self._sdk.ASIGetVideoData(self.camera_id, ptr, size, wait_ms)
             if ret != ASI_SUCCESS:
-                # timeout 在长曝光下是正常现象，不持续弹窗，只把失败交给采集线程短暂 sleep 后重试
+                # 长曝光超时属于正常状态，由采集线程短暂等待后重试
                 self.last_error = f"采集画面暂未就绪，ret={ret}"
                 return False, None
 
@@ -511,6 +515,7 @@ class ZWOCamera(BaseCamera):
             return False, None
 
     def close(self) -> None:
+        """停止视频流并关闭相机连接"""
         if self._sdk is not None:
             try:
                 if self.capture_started:

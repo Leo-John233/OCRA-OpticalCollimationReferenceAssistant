@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-# 文件说明：相机工厂根据配置选择模拟相机、普通 USB 相机、ZWO 或 QHY 后端
-# 同时提供设备枚举函数，把“相机编号”改为“识别到的相机下拉选择”
+"""根据应用配置创建相机后端并枚举可用设备"""
 from __future__ import annotations
 
 import cv2
@@ -15,7 +14,7 @@ from .zwo_camera import ZWOCamera
 
 
 def create_camera(config: AppConfig) -> BaseCamera:
-    """根据配置创建具体相机对象
+    """根据配置创建相机后端
 
     注意：这里是唯一需要判断相机类型的地方
     主窗口、视频线程和视觉算法都不需要知道底层是哪一种相机
@@ -50,23 +49,23 @@ def create_camera(config: AppConfig) -> BaseCamera:
 
 
 def list_camera_devices(camera_type: str, current_id: int = 0, max_usb_index: int = 8) -> list[tuple[int, str]]:
-    """枚举当前相机类型下可选择的设备
+    """枚举指定相机类型下可选择的设备
 
-    返回值格式为 [(device_id, display_name), ...]
-    UI 直接把 display_name 显示在下拉框里，把 device_id 存为 itemData
+    返回 ``[(device_id, display_name), ...]``
+    界面显示 ``display_name`` 并将 ``device_id`` 存入 ``itemData``
     """
     kind = (camera_type or "synthetic").lower()
     if kind == "synthetic":
         return [(0, "0 - Synthetic test camera")]
 
     if kind == "zwo":
-        # 这里不传 dll_path，由 ZWOCamera 按常见路径自动搜索
-        # 如果用户在 UI 中手动指定了 DLL，MainWindow 会直接调用 ZWOCamera.discover(dll_path)
+        # 未指定 DLL 时由 ZWOCamera 搜索常见安装路径
+        # 用户手动指定 DLL 后由 MainWindow 传入路径重新枚举
         return ZWOCamera.discover()
 
     if kind == "usb":
         devices: list[tuple[int, str]] = []
-        # 只扫前几个编号，避免部分 Windows 机器扫描过慢
+        # 限制探测范围以免部分 Windows 设备扫描过慢
         for idx in range(max_usb_index + 1):
             cap = cv2.VideoCapture(idx)
             ok = cap.isOpened()
@@ -74,12 +73,12 @@ def list_camera_devices(camera_type: str, current_id: int = 0, max_usb_index: in
             if ok:
                 devices.append((idx, f"{idx} - USB / DirectShow camera"))
         if not devices:
-            # 没扫到时保留当前编号，用户仍然可以尝试打开
+            # 保留当前编号以支持无法被枚举但可以手动打开的设备
             devices.append((int(current_id), f"{int(current_id)} - USB camera (manual)"))
         return devices
 
     if kind == "qhy":
-        # QHY 后端目前是占位接口保留一个选项，避免 UI 为空
+        # QHY 后端尚未接入 SDK，保留占位设备以维持界面状态
         return [(0, "0 - QHY camera")]
 
     return [(0, "0 - Unknown camera")]
