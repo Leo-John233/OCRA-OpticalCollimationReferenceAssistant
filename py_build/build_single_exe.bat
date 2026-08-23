@@ -1,37 +1,209 @@
-@echo off
-:: 设置编码为UTF-8避免中文乱码
+﻿@echo off
 chcp 65001 >nul
+setlocal EnableExtensions
+
+rem 单文件版通用构建脚本
+rem 已激活虚拟环境时优先使用当前解释器
+rem 未激活虚拟环境时自动创建并复用本地构建环境
+rem 依赖缺失时自动安装
+rem 请在终端中运行本脚本
+
+rem 解析项目路径
+for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
+set "BUILD_ENV=%PROJECT_ROOT%\py_build\.build_env"
+set "ENTRY_FILE=%PROJECT_ROOT%\main.py"
+set "REQUIREMENTS_FILE=%PROJECT_ROOT%\requirements.txt"
+set "ICON_FILE=%PROJECT_ROOT%\py_build\OCRA_icon.ico"
+set "ZWO_DLL=%PROJECT_ROOT%\ASICamera2.dll"
+set "CONFIG_DIR=%PROJECT_ROOT%\config"
+set "DIST_ROOT=%PROJECT_ROOT%\py_build\dist_single"
+set "OUTPUT_EXE=%DIST_ROOT%\OCRA_Single.exe"
+set "BUILD_ROOT=%PROJECT_ROOT%\py_build\build_single"
 
 echo ===================================================
-echo             开始全自动打包 (单文件版)
+echo 正在构建 OCRA 单文件版
 echo ===================================================
 
-:: 切换到当前脚本所在的 py_build 目录
-cd /d "%~dp0"
+rem 优先选择已激活的虚拟环境
+set "PYTHON_EXE="
+set "PYTHON_SOURCE="
+if defined CONDA_PREFIX if exist "%CONDA_PREFIX%\python.exe" (
+    set "PYTHON_EXE=%CONDA_PREFIX%\python.exe"
+    set "PYTHON_SOURCE=已激活的 Conda 环境"
+)
+if not defined PYTHON_EXE if defined VIRTUAL_ENV if exist "%VIRTUAL_ENV%\Scripts\python.exe" (
+    set "PYTHON_EXE=%VIRTUAL_ENV%\Scripts\python.exe"
+    set "PYTHON_SOURCE=已激活的虚拟环境"
+)
 
-echo 正在调用 PyInstaller 进行单文件打包，请稍候...
+rem 未激活虚拟环境时复用或创建本地构建环境
+if not defined PYTHON_EXE if exist "%BUILD_ENV%\Scripts\python.exe" (
+    set "PYTHON_EXE=%BUILD_ENV%\Scripts\python.exe"
+    set "PYTHON_SOURCE=本地构建环境"
+)
+if defined PYTHON_EXE goto python_ready
+call :find_base_python
+if not defined BASE_PYTHON (
+    echo [错误] 未找到可用的 Python
+    echo 请安装 64 位 Python 3.10 或更高版本后重试
+    exit /b 1
+)
+echo [信息] 正在创建本地构建环境
+"%BASE_PYTHON%" -m venv "%BUILD_ENV%"
+if errorlevel 1 (
+    echo [错误] 创建本地构建环境失败
+    exit /b 1
+)
+set "PYTHON_EXE=%BUILD_ENV%\Scripts\python.exe"
+set "PYTHON_SOURCE=新建的本地构建环境"
 
-:: 关键参数解释：
-:: -n: 指定生成的 exe 文件的名称
-:: -F: 单文件模式 (生成一个独立的exe文件，包含所有依赖)
-:: -w: 隐藏控制台黑框
-:: -i: 指定图标所在路径
-:: --distpath: 指定最终生成的 exe 存放文件夹，用于与原目录模式隔离
-:: --workpath: 指定打包过程中的临时缓存文件夹，用于隔离
-:: --add-binary: 将 DLL 文件打包进 exe，程序运行时会自动释放到临时目录调用
+:python_ready
+echo [信息] 环境来源 %PYTHON_SOURCE%
+echo [信息] 解释器路径 %PYTHON_EXE%
 
-pyinstaller -n "OCRA_Single" -F -w ^
- -i "E:\GitHub\OCRA\py_build\OCRA_icon.ico" ^
- --distpath "dist_single" ^
- --workpath "build_single" ^
- --add-binary "E:\GitHub\OCRA\ASICamera2.dll;." ^
- --add-binary "C:\Windows\System32\vcruntime140.dll;." ^
- --add-binary "C:\Windows\System32\vcruntime140_1.dll;." ^
- --add-binary "C:\Windows\System32\msvcp140.dll;." ^
- "E:\GitHub\OCRA\main.py"
+rem 检查解释器版本和位数
+"%PYTHON_EXE%" -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
+if errorlevel 1 (
+    echo [错误] OCRA 要求 Python 3.10 或更高版本
+    exit /b 1
+)
+"%PYTHON_EXE%" -c "import struct; raise SystemExit(0 if struct.calcsize('P') == 8 else 1)" >nul 2>&1
+if errorlevel 1 (
+    echo [错误] OCRA 要求使用 64 位 Python
+    exit /b 1
+)
+
+rem 检查必要文件
+if not exist "%ENTRY_FILE%" (
+    echo [错误] 未找到程序入口文件
+    echo %ENTRY_FILE%
+    exit /b 1
+)
+if not exist "%REQUIREMENTS_FILE%" (
+    echo [错误] 未找到依赖清单
+    echo %REQUIREMENTS_FILE%
+    exit /b 1
+)
+if not exist "%ICON_FILE%" (
+    echo [错误] 未找到程序图标
+    echo %ICON_FILE%
+    exit /b 1
+)
+if not exist "%ZWO_DLL%" (
+    echo [错误] 未找到相机驱动库
+    echo %ZWO_DLL%
+    exit /b 1
+)
+
+rem 检查并准备构建依赖
+"%PYTHON_EXE%" -m pip --version >nul 2>&1
+if errorlevel 1 (
+    echo [信息] 正在安装 pip
+    "%PYTHON_EXE%" -m ensurepip --upgrade
+    if errorlevel 1 (
+        echo [错误] 安装 pip 失败
+        exit /b 1
+    )
+)
+"%PYTHON_EXE%" -c "import PyInstaller, PyQt6, cv2, numpy, PIL" >nul 2>&1
+if errorlevel 1 (
+    echo [信息] 正在安装构建依赖
+    "%PYTHON_EXE%" -m pip install -r "%REQUIREMENTS_FILE%" pyinstaller
+    if errorlevel 1 (
+        echo [错误] 安装构建依赖失败
+        exit /b 1
+    )
+)
+"%PYTHON_EXE%" -c "import PyInstaller, PyQt6, cv2, numpy, PIL" >nul 2>&1
+if errorlevel 1 (
+    echo [错误] 构建依赖检查失败
+    exit /b 1
+)
+
+rem 创建中间目录
+if not exist "%BUILD_ROOT%\spec" mkdir "%BUILD_ROOT%\spec"
+if not exist "%BUILD_ROOT%\work" mkdir "%BUILD_ROOT%\work"
+
+rem 定位窗口平台插件
+set "PYQT_PATH_FILE=%BUILD_ROOT%\pyqt_path.txt"
+"%PYTHON_EXE%" -c "import os, PyQt6; print(os.path.dirname(PyQt6.__file__))" > "%PYQT_PATH_FILE%"
+if errorlevel 1 (
+    echo [错误] 无法定位 PyQt6 安装目录
+    exit /b 1
+)
+set /p "PYQT_ROOT="<"%PYQT_PATH_FILE%"
+del /Q "%PYQT_PATH_FILE%" >nul 2>&1
+set "QT_PLUGIN_DIR=%PYQT_ROOT%\Qt6\plugins"
+if not exist "%QT_PLUGIN_DIR%\platforms\qwindows.dll" (
+    echo [错误] 未找到窗口平台插件
+    echo %QT_PLUGIN_DIR%\platforms\qwindows.dll
+    exit /b 1
+)
+
+rem 执行单文件版打包
+pushd "%PROJECT_ROOT%"
+"%PYTHON_EXE%" -m PyInstaller ^
+    --name "OCRA_Single" ^
+    --onefile ^
+    --windowed ^
+    --clean ^
+    --noconfirm ^
+    --icon "%ICON_FILE%" ^
+    --distpath "%DIST_ROOT%" ^
+    --workpath "%BUILD_ROOT%\work" ^
+    --specpath "%BUILD_ROOT%\spec" ^
+    --add-binary "%ZWO_DLL%;." ^
+    --add-binary "%QT_PLUGIN_DIR%\platforms\qwindows.dll;PyQt6\Qt6\plugins\platforms" ^
+    "%ENTRY_FILE%"
+set "BUILD_EXIT=%ERRORLEVEL%"
+popd
+
+if not "%BUILD_EXIT%"=="0" (
+    echo [错误] 打包失败 错误码 %BUILD_EXIT%
+    exit /b %BUILD_EXIT%
+)
+if not exist "%OUTPUT_EXE%" (
+    echo [错误] 打包结束但未生成 OCRA_Single.exe
+    exit /b 1
+)
+
+rem 复制发布所需文件
+if exist "%CONFIG_DIR%" (
+    xcopy "%CONFIG_DIR%" "%DIST_ROOT%\config\" /E /I /Y >nul
+    if errorlevel 1 (
+        echo [错误] 复制配置目录失败
+        exit /b 1
+    )
+)
+if exist "%PROJECT_ROOT%\LICENSE" copy /Y "%PROJECT_ROOT%\LICENSE" "%DIST_ROOT%\LICENSE" >nul
+if exist "%PROJECT_ROOT%\README.md" copy /Y "%PROJECT_ROOT%\README.md" "%DIST_ROOT%\README.md" >nul
+if exist "%PROJECT_ROOT%\README_EN.md" copy /Y "%PROJECT_ROOT%\README_EN.md" "%DIST_ROOT%\README_EN.md" >nul
+if exist "%PROJECT_ROOT%\THIRD_PARTY_NOTICES.md" copy /Y "%PROJECT_ROOT%\THIRD_PARTY_NOTICES.md" "%DIST_ROOT%\THIRD_PARTY_NOTICES.md" >nul
 
 echo ===================================================
-echo 打包完成
-echo 单文件版可执行程序位于: dist_single\OCRA_Single.exe
+echo [成功] 单文件版已生成
+echo %OUTPUT_EXE%
+echo 请将 config 目录与 OCRA_Single.exe 一同发布
 echo ===================================================
-pause
+exit /b 0
+
+rem 查找用于创建本地构建环境的基础解释器
+:find_base_python
+set "BASE_PYTHON="
+where py >nul 2>&1
+if errorlevel 1 goto find_python_command
+for /f "delims=" %%P in ('py -3.13 -c "import sys; print(sys.executable)" 2^>nul') do if not defined BASE_PYTHON set "BASE_PYTHON=%%P"
+if defined BASE_PYTHON exit /b 0
+for /f "delims=" %%P in ('py -3.12 -c "import sys; print(sys.executable)" 2^>nul') do if not defined BASE_PYTHON set "BASE_PYTHON=%%P"
+if defined BASE_PYTHON exit /b 0
+for /f "delims=" %%P in ('py -3.11 -c "import sys; print(sys.executable)" 2^>nul') do if not defined BASE_PYTHON set "BASE_PYTHON=%%P"
+if defined BASE_PYTHON exit /b 0
+for /f "delims=" %%P in ('py -3.10 -c "import sys; print(sys.executable)" 2^>nul') do if not defined BASE_PYTHON set "BASE_PYTHON=%%P"
+if defined BASE_PYTHON exit /b 0
+
+:find_python_command
+where python >nul 2>&1
+if errorlevel 1 exit /b 1
+for /f "delims=" %%P in ('python -c "import sys; print(sys.executable)" 2^>nul') do if not defined BASE_PYTHON set "BASE_PYTHON=%%P"
+if defined BASE_PYTHON exit /b 0
+exit /b 1
