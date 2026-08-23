@@ -14,6 +14,7 @@ set "BUILD_ENV=%PROJECT_ROOT%\py_build\.build_env"
 set "ENTRY_FILE=%PROJECT_ROOT%\main.py"
 set "REQUIREMENTS_FILE=%PROJECT_ROOT%\requirements.txt"
 set "ICON_FILE=%PROJECT_ROOT%\py_build\OCRA_icon.ico"
+set "RUNTIME_ICON=%PROJECT_ROOT%\py_build\OCRA_icon.png"
 set "ZWO_DLL=%PROJECT_ROOT%\ASICamera2.dll"
 set "CONFIG_DIR=%PROJECT_ROOT%\config"
 set "DIST_ROOT=%PROJECT_ROOT%\py_build\dist_single"
@@ -89,6 +90,11 @@ if not exist "%ICON_FILE%" (
     echo %ICON_FILE%
     exit /b 1
 )
+if not exist "%RUNTIME_ICON%" (
+    echo [错误] 未找到运行时图标
+    echo %RUNTIME_ICON%
+    exit /b 1
+)
 if not exist "%ZWO_DLL%" (
     echo [错误] 未找到相机驱动库
     echo %ZWO_DLL%
@@ -139,6 +145,11 @@ if not exist "%QT_PLUGIN_DIR%\platforms\qwindows.dll" (
     echo %QT_PLUGIN_DIR%\platforms\qwindows.dll
     exit /b 1
 )
+if not exist "%QT_PLUGIN_DIR%\styles\qmodernwindowsstyle.dll" (
+    echo [错误] 未找到现代窗口样式插件
+    echo %QT_PLUGIN_DIR%\styles\qmodernwindowsstyle.dll
+    exit /b 1
+)
 
 rem 执行单文件版打包
 pushd "%PROJECT_ROOT%"
@@ -154,6 +165,8 @@ pushd "%PROJECT_ROOT%"
     --specpath "%BUILD_ROOT%\spec" ^
     --add-binary "%ZWO_DLL%;." ^
     --add-binary "%QT_PLUGIN_DIR%\platforms\qwindows.dll;PyQt6\Qt6\plugins\platforms" ^
+    --add-binary "%QT_PLUGIN_DIR%\styles\qmodernwindowsstyle.dll;PyQt6\Qt6\plugins\styles" ^
+    --add-data "%RUNTIME_ICON%;." ^
     "%ENTRY_FILE%"
 set "BUILD_EXIT=%ERRORLEVEL%"
 popd
