@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""OCRA 环境检测报告对话框。"""
+"""提供 OCRA 环境检测报告对话框"""
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
@@ -10,11 +10,12 @@ from core.environment_check import EnvironmentReport
 
 
 class EnvironmentCheckDialog(QDialog):
-    """显示、复制并重新运行环境检测。"""
+    """显示、复制并支持重新运行环境检测"""
 
     rerun_requested = pyqtSignal()
 
     def __init__(self, report: EnvironmentReport, parent=None) -> None:  # noqa: ANN001
+        """根据初始检测报告构建非模态对话框"""
         super().__init__(parent)
         self._report = report
         self.setModal(False)
@@ -47,6 +48,7 @@ class EnvironmentCheckDialog(QDialog):
         self.set_report(report)
 
     def set_report(self, report: EnvironmentReport) -> None:
+        """刷新报告内容及其对应语言的界面文本"""
         self._report = report
         is_en = report.language == "en"
         self.setWindowTitle("OCRA Environment Check" if is_en else "OCRA 环境检测")
@@ -59,5 +61,6 @@ class EnvironmentCheckDialog(QDialog):
         self.close_button.setText("Close" if is_en else "关闭")
 
     def _copy_report(self) -> None:
+        """将完整报告复制到系统剪贴板"""
         QApplication.clipboard().setText(self._report.to_text())
         self.copy_button.setText("Copied" if self._report.language == "en" else "已复制")

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-# 文件说明：主窗口和右侧控制面板负责 UI 布局、按钮事件、参数同步和状态显示
-# 设计逻辑：
-# 1. 左侧显示实时画面，右侧集中放置OCAL风格控制面板
-# 2. Circle 1 外圈绑定镜筒边缘参考中心，Circle 2/3 和星标绑定吸附后的内圈中心
-# 3. 三个圆和中心星标都可以独立启用、调半径/线宽/颜色颜色用短色块按钮选择
-# 4. 画面放大采用“围绕参考中心裁剪后再放大显示”的方式，坐标映射仍保持准确
-# 5. 设为零点后，后续检测中心会与该参考中心比较，并给出 RIGHT/DOWN 等调整提示
+"""构建主窗口并协调画面显示、参数同步和目标吸附
+
+左侧显示实时画面，右侧集中放置 OCAL 风格控制面板
+外圈绑定镜筒机械中心，其余辅助圆绑定各自的吸附中心
+画面围绕参考中心裁剪后放大，同时保持原始坐标映射准确
+参考中心锁定后，检测结果用于生成光轴调整方向提示
+"""
 from __future__ import annotations
 
 import copy
@@ -51,8 +51,8 @@ from ui.interactive_label import InteractiveVideoLabel
 from ui.video_thread import VideoThread
 
 
-# 颜色在配置文件中统一保存为 OpenCV 的 BGR 三元组
-# UI 上不再显示 Green/Red/Blue 这种文字选项，而是用短小的纯色按钮直接表示当前颜色
+# 配置文件统一使用 OpenCV BGR 三元组保存颜色
+# 界面使用纯色按钮直接表示当前颜色
 def bgr_to_qcolor(color: Tuple[int, int, int]) -> QColor:
     """OpenCV BGR -> Qt RGB"""
     b, g, r = color
@@ -73,6 +73,7 @@ class DampedSlider(QSlider):
     """
 
     def __init__(self, orientation: Qt.Orientation, damping: float = 0.28) -> None:
+        """初始化滑块方向和拖动阻尼系数"""
         super().__init__(orientation)
         self._damping = max(0.05, min(1.0, float(damping)))
         self._drag_start_pos: Optional[float] = None
@@ -81,6 +82,7 @@ class DampedSlider(QSlider):
         self.setPageStep(5)
 
     def mousePressEvent(self, event):  # noqa: ANN001, N802
+        """记录左键拖动的起点和初始值"""
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_start_pos = event.position().x() if self.orientation() == Qt.Orientation.Horizontal else event.position().y()
             self._drag_start_value = self.value()
@@ -89,6 +91,7 @@ class DampedSlider(QSlider):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):  # noqa: ANN001, N802
+        """按阻尼系数将鼠标位移转换为滑块值"""
         if self._drag_start_pos is not None:
             current_pos = event.position().x() if self.orientation() == Qt.Orientation.Horizontal else event.position().y()
             delta_px = current_pos - self._drag_start_pos
@@ -103,6 +106,7 @@ class DampedSlider(QSlider):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):  # noqa: ANN001, N802
+        """清除拖动状态并交还默认释放事件"""
         self._drag_start_pos = None
         super().mouseReleaseEvent(event)
 
@@ -111,6 +115,7 @@ class MainWindow(QMainWindow):
     """程序主窗口"""
 
     def __init__(self) -> None:
+        """加载配置、构建界面、执行环境检测并启动相机"""
         super().__init__()
         self.config_manager = ConfigManager()
         self.config: AppConfig = self.config_manager.load()
@@ -121,34 +126,31 @@ class MainWindow(QMainWindow):
         self.environment_dialog: Optional[EnvironmentCheckDialog] = None
         self._startup_environment_report: Optional[EnvironmentReport] = None
 
-        # 三圈使用不同圆心：外圈为参考中心；中圈/内圈为各自识别后的目标圆心
+        # 各圆使用独立圆心，外圈为参考中心，其余圆为各自识别中心
         self.middle_xy: Tuple[int, int] = (int(self.config.circle2_center_x), int(self.config.circle2_center_y))
         self.inner_xy: Tuple[int, int] = (int(self.config.circle3_center_x), int(self.config.circle3_center_y))
         self.secondary_xy: Tuple[int, int] = (int(self.config.circle4_center_x), int(self.config.circle4_center_y))
         self.active_target: str = self.config.active_target if self.config.active_target in {"middle", "inner", "secondary"} else "middle"
         self.detected_xy: Optional[Tuple[int, int]] = self._active_xy()
         self.last_score = 0.0
-        # 分别记录中圈/内圈最近一次持续吸附或手动吸附的识别分数
-        # HUD 会根据当前启用的持续吸附目标选择对应分数，避免中圈和内圈互相覆盖
+        # 分别记录各目标最近一次持续或手动吸附的识别分数
+        # HUD 按当前目标选取分数以免不同目标互相覆盖
         self._target_scores: Dict[str, float] = {"middle": 0.0, "inner": 0.0, "secondary": 0.0}
         self.last_source_key = "source_waiting"
         self.last_status_key = "waiting"
         self.last_status_detail = ""
 
-        # 外圈为三次按钮吸附定圆：每次点击右侧吸附外圈边缘按钮，
-        # 都调用源代码原有的自动外圈拟合并记录一次圆心/半径结果；第三次后
-        # 对三次结果做一致性筛选和加权融合整个过程不需要鼠标点击外圆边缘
+        # 外圈通过三次按钮吸附确定圆心和半径
+        # 第三次后筛选一致结果并联合拟合，全程无需手动点击边缘
         self._outer_three_point_mode = False
         self._outer_snap_results: list[Tuple[int, int, int]] = []
         self._outer_snap_scores: list[float] = []
-        # 每次按钮吸附保存本轮鲁棒拟合的原始内点第三次点击时不再平均三个圆，
-        # 而是合并有效轮次的全部内点后做一次联合几何拟合
+        # 每次吸附保存鲁棒拟合内点，第三次后合并有效点执行联合拟合
         self._outer_snap_point_sets: list[np.ndarray] = []
         self._outer_snap_infos: list[Dict[str, object]] = []
         self._outer_snap_start_geometry: Optional[Tuple[int, int, int]] = None
-        # 第 3 次按钮吸附完成后，先让 UI 显示 3/3 和第三轮单独拟合结果，
-        # 再在下一次事件循环中执行三轮联合拟合防止第三轮结果被最终结果
-        # 在同一按钮回调内立刻覆盖，造成视觉上像只吸附了两次
+        # 第三次吸附后先显示 3/3 和本轮结果
+        # 下一事件循环再执行联合拟合以保留清晰的操作反馈
         self._outer_finalize_pending = False
 
         # 自动跟踪不是每帧都跑，避免低性能机器卡顿
@@ -168,8 +170,8 @@ class MainWindow(QMainWindow):
         self._sync_all_controls_from_config()
         self._apply_language()
 
-        # 在相机线程启动前做一次完整环境自检，避免 USB 探测与采集线程争抢设备。
-        # 正常环境不弹窗；只有存在阻断性错误时，主窗口显示后自动打开详细报告。
+        # 相机线程启动前完成环境自检以免 USB 探测与采集争抢设备
+        # 正常环境不弹窗，仅在存在阻断错误时自动显示报告
         self._startup_environment_report = self._collect_environment_report(probe_hardware=True)
         if self._startup_environment_report.has_errors:
             QTimer.singleShot(0, self._show_startup_environment_issues)
@@ -348,6 +350,7 @@ class MainWindow(QMainWindow):
     # UI 构建
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
+        """构建视频区、控制面板、识别参数区和滚轮交互"""
         root = QWidget()
         self.setCentralWidget(root)
         main_layout = QHBoxLayout(root)
@@ -419,6 +422,7 @@ class MainWindow(QMainWindow):
         self.resize(1380, 820)
 
     def _build_control_group(self) -> None:
+        """构建启动、停止、重置和环境检测操作区"""
         self.control_group = QGroupBox()
         layout = QVBoxLayout(self.control_group)
 
@@ -587,6 +591,7 @@ class MainWindow(QMainWindow):
         self.panel_layout.addWidget(self.camera_group)
         self._update_camera_brand_visibility()
     def _build_overlay_group(self) -> None:
+        """构建画面缩放、圆形覆盖层和中心星标控制区"""
         self.overlay_group = QGroupBox()
         layout = QVBoxLayout(self.overlay_group)
 
@@ -767,6 +772,7 @@ class MainWindow(QMainWindow):
             value_label.setStyleSheet("font-size: 11px;")
 
         def make_label() -> QLabel:
+            """创建紧凑的识别参数名称标签"""
             label = QLabel()
             label.setFixedWidth(98)
             label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -774,6 +780,7 @@ class MainWindow(QMainWindow):
             return label
 
         def make_slider_cell(slider: QSlider, value_label: QLabel) -> QWidget:
+            """将识别参数滑块和数值标签组合为单元格"""
             row = QWidget()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
@@ -811,6 +818,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.vision_help_label, len(rows), 0, 1, 2)
 
     def _build_status_group(self) -> None:
+        """构建对准分数、偏移、引导和运行状态显示区"""
         self.status_group = QGroupBox()
         layout = QVBoxLayout(self.status_group)
         self.status_score = QLabel()
@@ -877,6 +885,7 @@ class MainWindow(QMainWindow):
     # 可复用控件
     # ------------------------------------------------------------------
     def _make_slider(self, minimum: int, maximum: int, value: int, callback: Callable[[int], None]) -> Tuple[QSlider, QLabel]:
+        """创建带实时数值标签的整数滑块"""
         slider = DampedSlider(Qt.Orientation.Horizontal)
         slider.setRange(minimum, maximum)
         slider.setValue(int(value))
@@ -892,7 +901,7 @@ class MainWindow(QMainWindow):
         value: int,
         callback: Callable[[int], None],
     ) -> Tuple[QSlider, QSpinBox]:
-        """创建“整数滑条 + 整数输入框”的双向位置控制。"""
+        """创建整数滑条和整数输入框的双向位置控制"""
         slider = DampedSlider(Qt.Orientation.Horizontal)
         slider.setRange(minimum, maximum)
         slider.setValue(int(value))
@@ -906,6 +915,7 @@ class MainWindow(QMainWindow):
         value_input.setAlignment(Qt.AlignmentFlag.AlignRight)
 
         def on_slider_changed(new_value: int) -> None:
+            """将滑块值同步到输入框和业务回调"""
             if value_input.value() != int(new_value):
                 value_input.setValue(int(new_value))
             callback(int(new_value))
@@ -921,11 +931,11 @@ class MainWindow(QMainWindow):
         value: float,
         callback: Callable[[float], None],
     ) -> Tuple[QSlider, QDoubleSpinBox]:
-        """创建外圈专用位置控制。
+        """创建外圈专用位置控制
 
-        滑条本身仍按整数像素移动；右侧输入框允许输入两位小数。
-        手动输入小数时，滑条只移动到最接近的整数刻度，但业务参数保留原始小数；
-        用户再次拖动滑条后，参数和输入框都会恢复为对应的整数值。
+        滑条仍按整数像素移动，右侧输入框允许输入两位小数
+        手动输入小数时滑条移动到最近整数刻度，业务参数保留原始小数
+        用户再次拖动滑条后参数和输入框恢复为对应整数值
         """
         slider = DampedSlider(Qt.Orientation.Horizontal)
         slider.setRange(minimum, maximum)
@@ -937,19 +947,21 @@ class MainWindow(QMainWindow):
         value_input.setSingleStep(0.1)
         value_input.setValue(float(value))
         value_input.setKeyboardTracking(False)
-        # 外圈输入框需容纳负数、两位小数和右侧步进按钮。
-        # 96 px 可避免数字被按钮遮挡，同时尽量把横向空间留给位置滑条。
-        # 其他圆圈的整数输入框尺寸保持原样。
+        # 外圈输入框需容纳负数、两位小数和右侧步进按钮
+        # 96 px 可避免数字被按钮遮挡并为位置滑条保留空间
+        # 其他圆形的整数输入框尺寸保持不变
         value_input.setFixedWidth(96)
         value_input.setAlignment(Qt.AlignmentFlag.AlignRight)
 
         def on_slider_changed(new_value: int) -> None:
+            """将整数滑块值同步到小数输入框和业务回调"""
             previous = value_input.blockSignals(True)
             value_input.setValue(float(new_value))
             value_input.blockSignals(previous)
             callback(float(new_value))
 
         def on_input_changed(new_value: float) -> None:
+            """保留输入小数并将最近整数刻度同步到滑块"""
             slider_value = int(round(float(new_value)))
             slider_value = max(slider.minimum(), min(slider.maximum(), slider_value))
             previous = slider.blockSignals(True)
@@ -962,6 +974,7 @@ class MainWindow(QMainWindow):
         return slider, value_input
 
     def _slider_row(self, slider: QSlider, value_label: QWidget) -> QWidget:
+        """将滑块和数值控件封装为无边距行容器"""
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -981,11 +994,13 @@ class MainWindow(QMainWindow):
         button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         def apply_color(color: Tuple[int, int, int]) -> None:
+            """保存按钮颜色并刷新色块样式和提示"""
             button._bgr_color = color  # type: ignore[attr-defined]
             button.setStyleSheet(self._color_button_style(color))
             button.setToolTip(f"BGR: {color[0]}, {color[1]}, {color[2]}")
 
         def choose_color() -> None:
+            """打开系统颜色选择器并提交有效颜色"""
             current = getattr(button, "_bgr_color", initial_color)
             chosen = QColorDialog.getColor(bgr_to_qcolor(current), self, self.i18n.t("custom_color"))
             if not chosen.isValid():
@@ -1012,6 +1027,7 @@ class MainWindow(QMainWindow):
         )
 
     def _make_circle_group(self, circle: CircleConfig, min_radius: int, max_radius: int) -> QGroupBox:
+        """构建单个圆形覆盖层的启用、尺寸、线宽和颜色控件"""
         group = QGroupBox()
         form = QFormLayout(group)
         enabled = QCheckBox()
@@ -1050,6 +1066,7 @@ class MainWindow(QMainWindow):
     # 语言刷新
     # ------------------------------------------------------------------
     def _apply_language(self) -> None:
+        """将当前语言文本应用到全部可见控件"""
         t = self.i18n.t
         self.setWindowTitle(t("app_title"))
         self.control_group.setTitle(t("control"))
@@ -1137,7 +1154,7 @@ class MainWindow(QMainWindow):
     # 环境检测
     # ------------------------------------------------------------------
     def _environment_config_snapshot(self) -> AppConfig:
-        """生成用于检测的配置快照，包含尚未点击“应用相机”的当前 UI 选择。"""
+        """生成检测配置快照并包含尚未应用的当前界面选择"""
         snapshot = copy.deepcopy(self.config)
         if hasattr(self, "camera_type_combo"):
             snapshot.camera_type = self.camera_type_combo.currentText().strip().lower()
@@ -1148,7 +1165,7 @@ class MainWindow(QMainWindow):
         return snapshot
 
     def _collect_environment_report(self, probe_hardware: bool = True) -> EnvironmentReport:
-        """运行环境检测并返回结构化报告。"""
+        """运行环境检测并返回结构化报告"""
         snapshot = self._environment_config_snapshot()
         camera_running = bool(self.thread and self.thread.isRunning())
         return run_environment_check(
@@ -1160,7 +1177,7 @@ class MainWindow(QMainWindow):
         )
 
     def _present_environment_report(self, report: EnvironmentReport) -> None:
-        """显示环境检测窗口；重复检测时复用同一个窗口。"""
+        """显示环境检测窗口并在重复检测时复用窗口"""
         if self.environment_dialog is None:
             self.environment_dialog = EnvironmentCheckDialog(report, self)
             self.environment_dialog.rerun_requested.connect(self.show_environment_check)
@@ -1171,13 +1188,13 @@ class MainWindow(QMainWindow):
         self.environment_dialog.activateWindow()
 
     def _show_startup_environment_issues(self) -> None:
-        """启动自检仅在存在阻断错误时自动显示。"""
+        """仅在启动自检存在阻断错误时自动显示报告"""
         report = self._startup_environment_report
         if report is not None and report.has_errors:
             self._present_environment_report(report)
 
     def show_environment_check(self) -> None:
-        """由用户主动运行环境检测，并显示可复制的完整报告。"""
+        """运行用户发起的环境检测并显示可复制报告"""
         report = self._collect_environment_report(probe_hardware=True)
         self._present_environment_report(report)
 
@@ -1388,6 +1405,7 @@ class MainWindow(QMainWindow):
             self.refresh_camera_devices()
 
     def start_camera(self) -> None:
+        """创建视频线程并连接画面和状态信号"""
         if self.thread and self.thread.isRunning():
             return
         self.thread = VideoThread(self.config)
@@ -1411,6 +1429,7 @@ class MainWindow(QMainWindow):
                 source_thread.mark_frame_consumed()
 
     def stop_camera(self) -> None:
+        """停止视频线程并更新界面状态"""
         if hasattr(self, "video_label"):
             self._cancel_outer_three_point_mode(clear_points=True)
         if self.thread:
@@ -1420,6 +1439,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def apply_camera_settings(self) -> None:
+        """保存设备与分辨率选择并重启相机线程"""
         self.config.camera_type = self.camera_type_combo.currentText()
         self.config.camera_id = self._current_camera_id()
         self.config.zwo_dll_path = self.zwo_dll_edit.text().strip()
@@ -1473,6 +1493,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _parse_resolution(self, text: str) -> Tuple[int, int]:
+        """解析宽乘高文本并在无效时返回当前分辨率"""
         try:
             w, h = text.lower().split("x")
             return int(w), int(h)
@@ -1480,6 +1501,7 @@ class MainWindow(QMainWindow):
             return 1280, 720
 
     def _handle_thread_status(self, key: str) -> None:
+        """解析视频线程状态及错误详情并刷新状态栏"""
         # 关键修正：真实相机打开失败时，不再把 UI 和配置强制改回 synthetic
         # 这样用户能看到自己当前选的仍然是 zwo，并可以修复依赖后直接刷新/重试
         if "::" in key:
@@ -1494,6 +1516,7 @@ class MainWindow(QMainWindow):
     # 参数同步和覆盖层控制
     # ------------------------------------------------------------------
     def _sync_all_controls_from_config(self) -> None:
+        """将当前配置同步到相机、覆盖层和识别控件"""
         self._updating_ui = True
         self.lang_combo.setCurrentText(self.config.language)
         self.zwo_dll_edit.setText(self.config.zwo_dll_path)
@@ -1633,6 +1656,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def reset_center(self) -> None:
+        """解除参考锁定并将各目标中心重置到画面中心"""
         self._cancel_outer_three_point_mode(clear_points=True)
         self.config.horizontal_offset = 0
         self.config.vertical_offset = 0
@@ -1673,6 +1697,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _sync_offset_sliders(self) -> None:
+        """将参考中心偏移同步到外圈位置控件"""
         self._updating_ui = True
         h_value = float(max(self.h_offset_slider.minimum(), min(self.h_offset_slider.maximum(), self.config.horizontal_offset)))
         v_value = float(max(self.v_offset_slider.minimum(), min(self.v_offset_slider.maximum(), self.config.vertical_offset)))
@@ -1683,6 +1708,7 @@ class MainWindow(QMainWindow):
         self._updating_ui = False
 
     def _on_h_offset(self, value: float) -> None:
+        """更新水平偏移并重新计算参考中心"""
         if self._updating_ui or self.config.reference_locked:
             return
         self.config.horizontal_offset = float(value)
@@ -1691,6 +1717,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _on_v_offset(self, value: float) -> None:
+        """更新垂直偏移并重新计算参考中心"""
         if self._updating_ui or self.config.reference_locked:
             return
         self.config.vertical_offset = float(value)
@@ -1834,6 +1861,7 @@ class MainWindow(QMainWindow):
 
 
     def _on_middle_x(self, value: int) -> None:
+        """更新中圈水平位置并设为当前目标"""
         if self._updating_ui or self.config.middle_concentric_with_outer:
             return
         self._set_target_xy("middle", self.config.center_x + int(value), self.config.circle2_center_y)
@@ -1842,6 +1870,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _on_middle_y(self, value: int) -> None:
+        """更新中圈垂直位置并设为当前目标"""
         if self._updating_ui or self.config.middle_concentric_with_outer:
             return
         self._set_target_xy("middle", self.config.circle2_center_x, self.config.center_y + int(value))
@@ -1850,6 +1879,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _on_inner_x(self, value: int) -> None:
+        """更新内圈水平位置并设为当前目标"""
         if self._updating_ui or self.config.inner_concentric_with_outer:
             return
         self._set_target_xy("inner", self.config.center_x + int(value), self.config.circle3_center_y)
@@ -1858,6 +1888,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _on_inner_y(self, value: int) -> None:
+        """更新内圈垂直位置并设为当前目标"""
         if self._updating_ui or self.config.inner_concentric_with_outer:
             return
         self._set_target_xy("inner", self.config.circle3_center_x, self.config.center_y + int(value))
@@ -1866,6 +1897,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _on_secondary_x(self, value: int) -> None:
+        """更新副镜圈水平位置并设为当前目标"""
         if self._updating_ui or self.config.secondary_concentric_with_outer:
             return
         self._set_target_xy("secondary", self.config.center_x + int(value), self.config.circle4_center_y)
@@ -1874,6 +1906,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _on_secondary_y(self, value: int) -> None:
+        """更新副镜圈垂直位置并设为当前目标"""
         if self._updating_ui or self.config.secondary_concentric_with_outer:
             return
         self._set_target_xy("secondary", self.config.circle4_center_x, self.config.center_y + int(value))
@@ -1882,6 +1915,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def _on_track_middle(self) -> None:
+        """切换中圈持续吸附并维护全局跟踪状态"""
         if self.config.middle_concentric_with_outer:
             self.middle_track_check.setChecked(False)
             self.config.track_middle = False
@@ -1892,6 +1926,7 @@ class MainWindow(QMainWindow):
             self._set_active_target("middle")
 
     def _on_track_inner(self) -> None:
+        """切换内圈持续吸附并维护全局跟踪状态"""
         if self.config.inner_concentric_with_outer:
             self.inner_track_check.setChecked(False)
             self.config.track_inner = False
@@ -1902,6 +1937,7 @@ class MainWindow(QMainWindow):
             self._set_active_target("inner")
 
     def _on_track_secondary(self) -> None:
+        """切换副镜圈持续吸附并维护全局跟踪状态"""
         if self.config.secondary_concentric_with_outer:
             self.secondary_track_check.setChecked(False)
             self.config.track_secondary = False
@@ -1912,6 +1948,7 @@ class MainWindow(QMainWindow):
             self._set_active_target("secondary")
 
     def _on_zoom(self, value: int) -> None:
+        """更新画面缩放比例和平移控件状态"""
         self.config.zoom_percent = value
         self._update_pan_sliders_enabled()
 
@@ -1947,6 +1984,7 @@ class MainWindow(QMainWindow):
     def _update_circle(self, circle: CircleConfig, enabled: Optional[bool] = None,
                        radius: Optional[int] = None, thickness: Optional[float] = None,
                        color: Optional[Tuple[int, int, int]] = None) -> None:
+        """按传入字段更新指定圆形覆盖层配置"""
         if enabled is not None:
             circle.enabled = enabled
         if radius is not None:
@@ -1958,6 +1996,7 @@ class MainWindow(QMainWindow):
 
     def _update_star(self, length: Optional[int] = None, thickness: Optional[float] = None,
                      angle: Optional[int] = None, color: Optional[Tuple[int, int, int]] = None) -> None:
+        """按当前控件状态更新中心星标配置"""
         self.config.star.enabled = self.star_enable.isChecked()
         if length is not None:
             self.config.star.length = length
@@ -1969,18 +2008,23 @@ class MainWindow(QMainWindow):
             self.config.star.color = color
 
     def _on_roi(self, value: int) -> None:
+        """更新亮斑吸附搜索区域大小"""
         self.config.snap_roi = value
 
     def _on_threshold(self, value: int) -> None:
+        """更新亮斑吸附阈值"""
         self.config.snap_threshold = value
 
     def _on_band(self, value: int) -> None:
+        """更新通用边缘搜索带宽"""
         self.config.edge_band_width = value
 
     def _on_secondary_band(self, value: int) -> None:
+        """更新副镜边缘专用搜索带宽"""
         self.config.secondary_edge_band_width = value
 
     def _on_secondary_sensitivity(self, value: int) -> None:
+        """更新副镜弱边缘检测灵敏度"""
         self.config.secondary_edge_sensitivity = value
 
     # ------------------------------------------------------------------
@@ -2027,6 +2071,7 @@ class MainWindow(QMainWindow):
             self.btn_snap_edge.setText(base)
 
     def _cancel_outer_three_point_mode(self, clear_points: bool = True) -> None:
+        """退出外圈三次吸附流程并按需清除已采集结果"""
         self._outer_three_point_mode = False
         self._outer_finalize_pending = False
         if clear_points:
@@ -2450,6 +2495,7 @@ class MainWindow(QMainWindow):
                 self._push_history()
 
     def _push_history(self) -> None:
+        """记录当前目标的偏移和分数并限制历史长度"""
         self.detected_xy = self._primary_hud_xy()
         m = VisionEngine.measure(self.config, self.detected_xy)
         self._history["dx"].append(m["dx"])
@@ -2463,6 +2509,7 @@ class MainWindow(QMainWindow):
     # 配置保存、读取、语言切换
     # ------------------------------------------------------------------
     def save_parameters(self) -> None:
+        """汇总界面状态并保存完整应用配置"""
         self.config.language = self.lang_combo.currentText()
         self.config.camera_type = self.camera_type_combo.currentText()
         self.config.camera_id = self._current_camera_id()
@@ -2498,6 +2545,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def load_parameters(self) -> None:
+        """重新加载配置并同步目标、语言和全部控件"""
         self._cancel_outer_three_point_mode(clear_points=True)
         self.config = self.config_manager.load()
         self.i18n.set_language(self.config.language)
@@ -2515,6 +2563,7 @@ class MainWindow(QMainWindow):
         self._update_status_labels()
 
     def change_language(self, lang: str) -> None:
+        """切换界面语言并立即刷新文本"""
         self.config.language = lang
         self.i18n.set_language(lang)
         self._apply_language()
@@ -2523,6 +2572,7 @@ class MainWindow(QMainWindow):
     # 画面渲染和状态刷新
     # ------------------------------------------------------------------
     def update_image(self, cv_img: np.ndarray) -> None:
+        """处理新相机帧并完成跟踪、缩放、覆盖层和状态渲染"""
         self._render_counter += 1
         # 不复制原始帧，避免高分辨率下每帧额外占用大量内存和 CPU
         # 后续绘制都在 display_frame 上进行，不会污染 current_frame
@@ -2633,6 +2683,7 @@ class MainWindow(QMainWindow):
         return shown, view_rect
 
     def _update_status_labels(self) -> None:
+        """刷新当前目标的分数、偏移、引导和运行状态"""
         t = self.i18n.t
         self.detected_xy = self._primary_hud_xy()
         m = VisionEngine.measure(self.config, self.detected_xy)
@@ -2649,5 +2700,6 @@ class MainWindow(QMainWindow):
             self.status_text.setText(f"Status: {t(self.last_status_key)}")
 
     def closeEvent(self, event) -> None:  # noqa: ANN001
+        """关闭窗口前停止视频线程并释放相机"""
         self.stop_camera()
         event.accept()
