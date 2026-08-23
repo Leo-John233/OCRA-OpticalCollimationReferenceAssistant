@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """OCRA 程序入口
 
-启动顺序刻意保持为：标准库原生自检 -> 真实导入 Qt/OpenCV -> 创建 QApplication -> 加载主窗口
+启动顺序保持为标准库原生自检、导入 Qt 和 OpenCV、创建 QApplication、加载主窗口
 这样即使打包后的 QtWidgets 底层 DLL 无法加载，也不会只出现 PyInstaller 英文异常框
 """
 from __future__ import annotations
@@ -18,6 +18,7 @@ from core.startup_guard import (
 
 
 def main() -> int:
+    """完成启动前检查并运行 Qt 应用事件循环"""
     multiprocessing.freeze_support()
     install_exception_hook()
 
