@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-# 文件说明：视觉算法模块只负责 OpenCV 绘制、亮斑吸附、外圈边缘拟合，不依赖 PyQt
-# 设计逻辑：
-# 1. 参考中心由 config.center_x / config.center_y 表示，等同于 OCAL 的“设为零点”
-# 2. detected_x / detected_y 是当前检测到的亮斑中心，用它和参考中心计算 dx/dy/dist
-# 3. dx/dy 的方向逻辑按 OCAL 截图处理：dx<0 提示 RIGHT，dy<0 提示 DOWN
+"""提供不依赖 PyQt 的 OpenCV 绘制与目标吸附算法
+
+参考中心由 ``config.center_x`` 和 ``config.center_y`` 表示
+检测中心与参考中心之差用于计算 dx、dy 和 dist
+方向提示沿用 OCAL 逻辑，dx 小于 0 时提示 RIGHT，dy 小于 0 时提示 DOWN
+"""
 from __future__ import annotations
 
 import math
@@ -12,7 +13,7 @@ from typing import Dict, Iterable, Optional, Tuple
 import cv2
 import numpy as np
 
-# 启用 OpenCV 内部 SIMD/多线程优化某些环境默认已开启，显式设置可避免被外部库关闭
+# 显式启用 OpenCV SIMD 优化以免被外部库关闭
 cv2.setUseOptimized(True)
 try:
     cv2.setNumThreads(0)
@@ -21,7 +22,7 @@ except Exception:
 
 try:
     from PIL import Image, ImageDraw, ImageFont
-except Exception:  # Pillow 是可选依赖；缺失时退回 OpenCV 英文字体
+except Exception:  # Pillow 缺失时回退到 OpenCV 英文字体
     Image = ImageDraw = ImageFont = None
 
 from .app_state import AppConfig, CircleConfig
@@ -30,7 +31,8 @@ from .app_state import AppConfig, CircleConfig
 class VisionEngine:
     """纯 OpenCV 视觉算法层，不导入 PyQt
 
-    这里提供三类能力：
+    这里提供三类能力
+
     1. 绘制 OCAL 风格的十字线、同心圆、中心星标、检测点和方向箭头
     2. 中心亮斑吸附：适合吸附 OCAL 中心反射亮点
     3. 环形边缘吸附：适合手动粗调外圈后，对外圈圆边缘做最小二乘拟合
@@ -43,7 +45,7 @@ class VisionEngine:
 
     @staticmethod
     def _find_font_path() -> Optional[str]:
-        """寻找常见中文字体Windows 用户通常会命中微软雅黑或黑体"""
+        """查找常见中文字体，Windows 通常使用微软雅黑或黑体"""
         candidates = [
             "C:/Windows/Fonts/msyh.ttc",
             "C:/Windows/Fonts/simhei.ttf",
@@ -62,7 +64,7 @@ class VisionEngine:
 
     @staticmethod
     def _get_font(size: int, bold: bool = False):
-        """获取 Pillow 字体对象找不到中文字体时退回默认字体"""
+        """获取 Pillow 字体对象，找不到中文字体时回退到默认字体"""
         key = (size, bold)
         if key in VisionEngine._font_cache:
             return VisionEngine._font_cache[key]
@@ -80,7 +82,7 @@ class VisionEngine:
     def _hud_scale(frame: np.ndarray) -> float:
         """根据当前显示帧尺寸自动计算 HUD 缩放比例
 
-        以 1280x720 为基准低分辨率自动缩小，高分辨率自动放大，
+        以 1280x720 为基准，低分辨率自动缩小，高分辨率自动放大
         并限制比例范围，避免文字过大遮挡画面或过小看不清
         """
         h, w = frame.shape[:2]
@@ -97,11 +99,11 @@ class VisionEngine:
                          x: int, y: int, line_gap: int = 28, stroke_width: int = 2) -> None:
         """一次性绘制多行 Unicode 文本，避免 OpenCV 中文乱码
 
-        文字加黑色描边无论画面是白色亮斑、黑色背景还是高噪声，
+        文字增加黑色描边，无论画面是白色亮斑、黑色背景还是高噪声
         左上角 HUD 都能保持清晰
         """
         if Image is None or ImageDraw is None or ImageFont is None:
-            # Pillow 不存在时退回 OpenCV中文可能显示为问号，但程序不会崩溃
+            # Pillow 不存在时回退到 OpenCV，中文可能显示为问号
             for i, (text, color, size, _bold) in enumerate(lines):
                 org = (x, y + line_gap * i)
                 font_scale = max(0.45, size / 28.0)
@@ -230,9 +232,11 @@ class VisionEngine:
         sr = (sx + sy) * 0.5
 
         def map_point(x: float, y: float) -> Tuple[int, int]:
+            """将原始画面坐标映射到最终显示坐标"""
             return int(round((float(x) - view_x) * sx)), int(round((float(y) - view_y) * sy))
 
         def scaled_radius(radius: float) -> int:
+            """将原始画面半径映射到最终显示尺寸"""
             return max(1, int(round(float(radius) * sr)))
 
         ref = map_point(config.center_x, config.center_y)
@@ -1018,6 +1022,7 @@ class VisionEngine:
         gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
 
         def run_fit(x: np.ndarray, y: np.ndarray, mode: float, min_coverage: float):
+            """对候选边缘点执行鲁棒拟合并统一返回结构"""
             pts = np.column_stack((x, y)).astype(np.float64)
             result = VisionEngine.fit_circle_points_robust(
                 pts,
@@ -1223,6 +1228,7 @@ class VisionEngine:
             y = y[::step]
 
         def circle_from_3pts(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray):
+            """根据三个非共线点计算圆心和半径"""
             ax, ay = p1
             bx, by = p2
             cx, cy = p3

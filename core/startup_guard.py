@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""OCRA 启动前原生环境检测。
+"""执行 OCRA 启动前原生环境检测
 
-本模块只能依赖 Python 标准库。它会在导入 PyQt6、OpenCV、NumPy 和业务模块之前运行，
+本模块只能依赖 Python 标准库
+它会在导入 PyQt6、OpenCV、NumPy 和业务模块之前运行
 因此即使 Qt 的底层 DLL 无法加载，也能使用 Windows 原生 MessageBox 给出明确提示，
-并把完整诊断报告写入磁盘。
+并把完整诊断报告写入磁盘
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ _PRELOADED_SYSTEM_DLLS: list[object] = []
 
 
 def preload_windows_system_icu() -> tuple[Optional[Path], Optional[str]]:
-    """Load the Windows ICU before Conda can satisfy Qt with its incompatible ICU."""
+    """在 Conda 的不兼容 ICU 介入前预加载 Windows 系统 ICU"""
     if platform.system().lower() != "windows":
         return None, None
 
@@ -38,20 +39,19 @@ def preload_windows_system_icu() -> tuple[Optional[Path], Optional[str]]:
         return None, f"Windows ICU not found: {icu_path}"
 
     try:
-        # LOAD_LIBRARY_SEARCH_SYSTEM32 prevents a same-named Conda DLL from
-        # being selected while resolving this system library's dependencies.
+        # 限定从 System32 加载以免解析依赖时选中 Conda 同名 DLL
         handle = ctypes.WinDLL(str(icu_path), winmode=0x00000800)
     except OSError as exc:
         return None, f"{icu_path}: {exc}"
 
-    # Keep the library loaded for the lifetime of the process. Qt6Core.dll
-    # will then reuse this module instead of Conda's incompatible icuuc.dll.
+    # 在进程生命周期内保留句柄，使 Qt6Core.dll 复用系统 ICU
     _PRELOADED_SYSTEM_DLLS.append(handle)
     return icu_path, None
 
 
 @dataclass(frozen=True)
 class StartupCheck:
+    """记录单项启动检查结果"""
     key: str
     status: str
     summary: str
@@ -61,6 +61,7 @@ class StartupCheck:
 
 @dataclass
 class StartupReport:
+    """汇总启动检查结果及诊断报告路径"""
     generated_at: datetime = field(default_factory=datetime.now)
     checks: list[StartupCheck] = field(default_factory=list)
     report_path: str = ""
@@ -73,19 +74,23 @@ class StartupReport:
         detail: str = "",
         action: str = "",
     ) -> None:
+        """追加检查项并将未知状态归一为信息"""
         if status not in _STATUS_RANK:
             status = "info"
         self.checks.append(StartupCheck(key, status, summary, detail, action))
 
     @property
     def has_errors(self) -> bool:
+        """返回报告中是否包含阻断错误"""
         return any(item.status == "error" for item in self.checks)
 
     @property
     def errors(self) -> list[StartupCheck]:
+        """返回所有阻断错误"""
         return [item for item in self.checks if item.status == "error"]
 
     def to_text(self) -> str:
+        """将启动检查结果格式化为诊断文本"""
         labels = {"pass": "PASS", "info": "INFO", "warning": "WARN", "error": "FAIL"}
         lines = [
             "OCRA Startup Diagnostics / OCRA 启动诊断",
@@ -106,16 +111,19 @@ class StartupReport:
 
 
 def is_frozen() -> bool:
+    """返回程序是否运行在冻结打包环境"""
     return bool(getattr(sys, "frozen", False))
 
 
 def executable_root() -> Path:
+    """返回可执行文件或源码项目的根目录"""
     if is_frozen():
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parents[1]
 
 
 def resource_root() -> Path:
+    """返回 PyInstaller 资源目录或源码项目根目录"""
     bundle_root = getattr(sys, "_MEIPASS", None)
     if bundle_root:
         return Path(bundle_root).resolve()
@@ -123,10 +131,10 @@ def resource_root() -> Path:
 
 
 def normalize_working_directory() -> None:
-    """打包版始终以 EXE 所在目录为工作目录。
+    """将打包版工作目录固定为可执行文件所在目录
 
     这可保证 config/config.txt、ASICamera2.dll 等外部文件不会因为快捷方式的
-    “起始位置”不同而失效。
+    起始位置不同而失效
     """
     if not is_frozen():
         return
@@ -137,6 +145,7 @@ def normalize_working_directory() -> None:
 
 
 def _unique_existing_directories(paths: Iterable[Path]) -> list[Path]:
+    """解析、去重并过滤不存在的目录"""
     result: list[Path] = []
     seen: set[str] = set()
     for path in paths:
@@ -153,6 +162,7 @@ def _unique_existing_directories(paths: Iterable[Path]) -> list[Path]:
 
 
 def _candidate_runtime_roots() -> list[Path]:
+    """返回源码版和打包版可能使用的运行时根目录"""
     exe = executable_root()
     bundle = resource_root()
     return _unique_existing_directories(
@@ -166,7 +176,7 @@ def _candidate_runtime_roots() -> list[Path]:
 
 
 def _discover_qt_directories() -> tuple[list[Path], list[Path]]:
-    """返回 Qt DLL 目录与 Qt plugin 目录。"""
+    """返回 Qt DLL 目录和插件目录"""
     dll_dirs: list[Path] = []
     plugin_dirs: list[Path] = []
 
@@ -186,7 +196,7 @@ def _discover_qt_directories() -> tuple[list[Path], list[Path]]:
             ]
         )
 
-    # 兼容不同 PyInstaller 版本或自定义 contents_directory。
+    # 兼容不同 PyInstaller 版本和自定义 contents_directory
     for root in _candidate_runtime_roots():
         try:
             for core_dll in root.rglob("Qt6Core.dll"):
@@ -200,10 +210,10 @@ def _discover_qt_directories() -> tuple[list[Path], list[Path]]:
 
 
 def configure_windows_dll_search() -> tuple[list[Path], list[Path]]:
-    """显式注册打包目录中的 Qt DLL 和插件目录。
+    """显式注册打包目录中的 Qt DLL 和插件目录
 
     Windows 10 的 DLL 搜索规则、快捷方式工作目录以及部分安全软件处理方式不同，
-    显式注册目录可避免 QtWidgets.pyd 已存在但其依赖 DLL 无法定位的问题。
+    显式注册目录可避免 QtWidgets.pyd 存在但其依赖 DLL 无法定位
     """
     if platform.system().lower() != "windows":
         return [], []
@@ -236,6 +246,7 @@ def configure_windows_dll_search() -> tuple[list[Path], list[Path]]:
 
 
 def _find_runtime_file(filename: str) -> Optional[Path]:
+    """在候选运行时目录中查找指定文件"""
     wanted = filename.lower()
     for root in _candidate_runtime_roots():
         direct_candidates = [
@@ -256,6 +267,7 @@ def _find_runtime_file(filename: str) -> Optional[Path]:
 
 
 def _windows_version_detail() -> tuple[str, Optional[int]]:
+    """返回 Windows 版本描述和构建号"""
     if platform.system().lower() != "windows":
         return platform.platform(), None
     try:
@@ -267,6 +279,7 @@ def _windows_version_detail() -> tuple[str, Optional[int]]:
 
 
 def _package_version(name: str) -> str:
+    """返回依赖包版本或与运行模式对应的缺失状态"""
     try:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
@@ -274,10 +287,12 @@ def _package_version(name: str) -> str:
 
 
 def _format_exception(exc: BaseException) -> str:
+    """将异常及其回溯格式化为诊断文本"""
     return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
 
 
 def _check_windows_runtime(report: StartupReport) -> None:
+    """检查 Windows 版本、进程位数和 Visual C++ 运行库"""
     if platform.system().lower() != "windows":
         report.add(
             "os",
@@ -334,6 +349,7 @@ def _check_windows_runtime(report: StartupReport) -> None:
 
 
 def _check_packaged_qt_files(report: StartupReport) -> None:
+    """检查打包目录中的 Qt DLL 和平台插件是否完整"""
     if not is_frozen():
         report.add("package_layout", "info", "当前为 Python 源码运行模式")
         return
@@ -365,7 +381,7 @@ def _check_packaged_qt_files(report: StartupReport) -> None:
         " | ".join(f"{name}={path}" for name, path in found.items()),
     )
 
-    # 先通过 Windows Loader 检查 qwindows.dll 的依赖链，避免 QApplication 创建时直接中止。
+    # 先用 Windows Loader 检查 qwindows.dll 依赖链以免 QApplication 直接中止
     if platform.system().lower() == "windows":
         plugin = found.get("qwindows.dll")
         if plugin is not None:
@@ -383,7 +399,8 @@ def _check_packaged_qt_files(report: StartupReport) -> None:
 
 
 def _check_required_imports(report: StartupReport) -> None:
-    # Qt 必须做真实导入，find_spec 无法发现 QtWidgets.pyd 的二级 DLL 缺失。
+    """实际导入运行依赖以发现模块或底层 DLL 缺失"""
+    # find_spec 无法发现 QtWidgets.pyd 的二级 DLL 缺失，因此必须真实导入
     try:
         from PyQt6 import QtCore, QtGui, QtWidgets  # noqa: F401
 
@@ -403,7 +420,7 @@ def _check_required_imports(report: StartupReport) -> None:
             _format_exception(exc),
             "优先修复 VC++ x64 运行库；若仍失败，请用 OCRA.spec 重新打包并完整发送整个 OCRA 文件夹",
         )
-        # Qt 已失败时仍继续检查其他模块，报告可一次性给出更多信息。
+        # Qt 失败后仍检查其他模块以一次性给出完整报告
 
     required_modules = (
         ("numpy", "NumPy", True),
@@ -431,7 +448,7 @@ def _check_required_imports(report: StartupReport) -> None:
 
 
 def run_startup_preflight() -> StartupReport:
-    """执行不会依赖 Qt 界面的启动前检查。"""
+    """执行不依赖 Qt 界面的启动前检查"""
     normalize_working_directory()
     report = StartupReport()
 
@@ -473,6 +490,7 @@ def run_startup_preflight() -> StartupReport:
 
 
 def _write_text_safely(filename: str, content: str) -> str:
+    """优先向程序目录写入文本，失败后回退到临时目录"""
     candidates = [executable_root() / filename, Path(tempfile.gettempdir()) / filename]
     for path in candidates:
         try:
@@ -485,11 +503,13 @@ def _write_text_safely(filename: str, content: str) -> str:
 
 
 def save_startup_report(report: StartupReport) -> str:
+    """保存启动诊断报告并返回实际路径"""
     report.report_path = _write_text_safely("OCRA_startup_diagnostics.txt", report.to_text())
     return report.report_path
 
 
 def _native_message_box(title: str, message: str, error: bool = True) -> None:
+    """使用 Windows 原生消息框显示信息，失败时写入标准错误"""
     if platform.system().lower() == "windows":
         try:
             flags = 0x00000010 if error else 0x00000040  # MB_ICONERROR / MB_ICONINFORMATION
@@ -501,6 +521,7 @@ def _native_message_box(title: str, message: str, error: bool = True) -> None:
 
 
 def show_startup_failure(report: StartupReport) -> None:
+    """保存诊断报告并向用户显示启动失败原因"""
     report_path = save_startup_report(report)
     reasons = [item.summary for item in report.errors[:4]]
     reason_text = "\n".join(f"• {reason}" for reason in reasons) or "• 未知启动错误"
@@ -520,6 +541,7 @@ def show_startup_failure(report: StartupReport) -> None:
 
 
 def build_exception_report(stage: str, exc: BaseException) -> StartupReport:
+    """将指定启动阶段的异常封装为诊断报告"""
     report = StartupReport()
     report.add(
         "unhandled_exception",
@@ -532,13 +554,15 @@ def build_exception_report(stage: str, exc: BaseException) -> StartupReport:
 
 
 def handle_unhandled_exception(stage: str, exc: BaseException) -> None:
+    """生成并显示指定启动阶段的未处理异常"""
     show_startup_failure(build_exception_report(stage, exc))
 
 
 def install_exception_hook() -> None:
-    """避免窗口版 PyInstaller 仅显示英文 Unhandled exception 弹窗。"""
+    """安装异常钩子以显示可操作的中英文诊断信息"""
 
     def _hook(exc_type, exc_value, exc_traceback):  # noqa: ANN001
+        """捕获主线程未处理异常并显示诊断报告"""
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return

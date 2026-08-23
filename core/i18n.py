@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-# 文件说明：国际化模块所有界面文字都从这里读取，避免把中文或英文硬编码在 UI 逻辑里
-# 注释原则：重点解释模块职责、关键参数、坐标映射和算法意图，便于后续维护
+"""集中管理中英文界面文本并提供按键查询能力"""
 TRANSLATIONS = {
     "zh": {
         "app_title": "OCRA 光轴校准 - Python Pro",
@@ -401,12 +400,13 @@ class I18nManager:
     """
 
     def __init__(self, language: str = "zh") -> None:
+        """设置初始语言并对未知语言回退到中文"""
         self.language = language if language in TRANSLATIONS else "zh"
 
     def set_language(self, language: str) -> None:
-        """切换语言；如果传入未知语言，则回退到中文"""
+        """切换语言并对未知语言回退到中文"""
         self.language = language if language in TRANSLATIONS else "zh"
 
     def t(self, key: str) -> str:
-        """根据 key 获取翻译找不到翻译时直接返回 key，方便定位缺失项"""
+        """返回指定键的译文，缺失时返回键名以便定位"""
         return TRANSLATIONS.get(self.language, TRANSLATIONS["zh"]).get(key, key)

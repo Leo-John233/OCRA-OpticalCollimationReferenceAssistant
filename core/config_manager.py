@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# 文件说明：配置读写模块负责把界面参数保存到 config/config.txt，并在下次启动时恢复
+"""读写可由用户直接编辑的键值配置文件"""
 from __future__ import annotations
 
 import os
@@ -10,10 +10,12 @@ from .app_state import AppConfig, CircleConfig, StarConfig
 
 
 def _parse_bool(value: str) -> bool:
+    """将常见中英文布尔文本转换为布尔值"""
     return value.strip().lower() in {"1", "true", "yes", "y", "on", "启用", "是"}
 
 
 def _parse_color(value: str) -> Tuple[int, int, int]:
+    """解析逗号分隔的 BGR 颜色并限制各通道范围"""
     parts = [p.strip() for p in value.split(",")]
     if len(parts) != 3:
         raise ValueError("颜色必须是 B,G,R 格式，例如 0,255,0")
@@ -21,6 +23,7 @@ def _parse_color(value: str) -> Tuple[int, int, int]:
 
 
 def _format_color(color: Tuple[int, int, int]) -> str:
+    """将 BGR 颜色格式化为逗号分隔文本"""
     return f"{color[0]},{color[1]},{color[2]}"
 
 
@@ -32,9 +35,11 @@ class ConfigManager:
     """
 
     def __init__(self, filepath: str = "config/config.txt") -> None:
+        """设置配置文件路径"""
         self.filepath = filepath
 
     def load(self) -> AppConfig:
+        """加载配置并对无效或缺失字段使用安全默认值"""
         config = AppConfig()
         if not os.path.exists(self.filepath):
             os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
@@ -116,13 +121,13 @@ class ConfigManager:
         self._load_nested(raw, config.circle4, "circle4")
         self._load_nested(raw, config.star, "star")
 
-        # 保持圆心和偏移一致如果配置里明确写了 offset，就以 offset 为准重新计算圆心
+        # 配置包含偏移时以偏移为准，否则由绝对圆心反算偏移
         if "horizontal_offset" in raw or "vertical_offset" in raw:
             config.update_center_from_offsets()
         else:
             config.update_offsets_from_center()
 
-        # 兼容旧配置：如果没有保存过中圈/内圈检测中心，则先让它们落在外圈参考中心
+        # 旧配置缺少检测中心时将各辅助圆对齐到外圈参考中心
         if "circle2_center_x" not in raw or "circle2_center_y" not in raw:
             config.circle2_center_x = int(config.center_x)
             config.circle2_center_y = int(config.center_y)
@@ -135,6 +140,7 @@ class ConfigManager:
         return config
 
     def _load_nested(self, raw: Dict[str, str], obj: Any, prefix: str) -> None:
+        """按字段类型加载圆形和星标等嵌套配置"""
         for field in fields(obj):
             key = f"{prefix}.{field.name}"
             if key not in raw:
@@ -155,6 +161,7 @@ class ConfigManager:
                 print(f"[Config] 已忽略无效配置: {key}={raw[key]}")
 
     def save(self, config: AppConfig) -> None:
+        """将当前配置序列化为稳定的键值文本"""
         os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
         config.update_offsets_from_center()
         lines = [
@@ -211,6 +218,7 @@ class ConfigManager:
             f.write("\n".join(lines) + "\n")
 
     def _dump_nested(self, obj: Any, prefix: str) -> list[str]:
+        """将数据类中的嵌套字段序列化为带前缀的键值行"""
         lines: list[str] = []
         if not is_dataclass(obj):
             return lines
