@@ -102,27 +102,53 @@ class VisionEngine:
         文字增加黑色描边，无论画面是白色亮斑、黑色背景还是高噪声
         左上角 HUD 都能保持清晰
         """
+        line_items = list(lines)
+        if not line_items:
+            return
         if Image is None or ImageDraw is None or ImageFont is None:
             # Pillow 不存在时回退到 OpenCV，中文可能显示为问号
-            for i, (text, color, size, _bold) in enumerate(lines):
+            for i, (text, color, size, _bold) in enumerate(line_items):
                 org = (x, y + line_gap * i)
                 font_scale = max(0.45, size / 28.0)
                 thickness = max(1, int(round(size / 16.0)))
                 cv2.putText(frame, text, org, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
                 cv2.putText(frame, text, org, cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, cv2.LINE_AA)
             return
-        image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        draw = ImageDraw.Draw(image)
-        for i, (text, color, size, bold) in enumerate(lines):
-            b, g, r = color
+
+        # 先测量文字边界并只转换 HUD 覆盖的小区域
+        # 避免每帧对整张高分辨率画面执行两次颜色转换
+        probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+        prepared_lines = []
+        bounds = []
+        for i, (text, color, size, bold) in enumerate(line_items):
             font = VisionEngine._get_font(size, bold)
+            text_y = y + line_gap * i
+            prepared_lines.append((text, color, font, text_y))
+            bounds.append(probe.textbbox((x, text_y), text, font=font, stroke_width=stroke_width))
+
+        pad = max(2, stroke_width + 1)
+        frame_h, frame_w = frame.shape[:2]
+        left = max(0, min(item[0] for item in bounds) - pad)
+        top = max(0, min(item[1] for item in bounds) - pad)
+        right = min(frame_w, max(item[2] for item in bounds) + pad)
+        bottom = min(frame_h, max(item[3] for item in bounds) + pad)
+        if right <= left or bottom <= top:
+            return
+
+        hud_region = frame[top:bottom, left:right]
+        image = Image.fromarray(cv2.cvtColor(hud_region, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(image)
+        for text, color, font, text_y in prepared_lines:
+            b, g, r = color
             try:
-                draw.text((x, y + line_gap * i), text, fill=(r, g, b), font=font,
+                draw.text((x - left, text_y - top), text, fill=(r, g, b), font=font,
                           stroke_width=stroke_width, stroke_fill=(0, 0, 0))
             except TypeError:
-                draw.text((x + 1, y + line_gap * i + 1), text, fill=(0, 0, 0), font=font)
-                draw.text((x, y + line_gap * i), text, fill=(r, g, b), font=font)
-        frame[:] = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
+                local_x = x - left
+                local_y = text_y - top
+                draw.text((local_x + 1, local_y + 1), text, fill=(0, 0, 0), font=font)
+                draw.text((local_x, local_y), text, fill=(r, g, b), font=font)
+        hud_region[:] = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
 
     # ------------------------------------------------------------------
     # 几何覆盖层：画在原始相机坐标上，缩放/放大前执行

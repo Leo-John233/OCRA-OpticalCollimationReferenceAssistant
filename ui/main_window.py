@@ -2672,10 +2672,15 @@ class MainWindow(QMainWindow):
                               target_metrics=hud_targets)
         # 用户反馈底部 dx/dy/dist/score 曲线实际意义不大，正式界面只保留左上角 HUD 提示
 
-        rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-        # QPixmap.fromImage 会在当前调用中接管/复制图像数据；这里不再先做 QImage.copy，
-        # 避免每帧产生两份显示缓冲区rgb 在转换完成前保持有效
-        qimg = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888)
+        # Qt 直接读取 OpenCV 的 BGR 缓冲并省去一次全帧颜色转换
+        # QPixmap.fromImage 在当前调用内复制数据因此 display_frame 保持有效即可
+        qimg = QImage(
+            display_frame.data,
+            display_frame.shape[1],
+            display_frame.shape[0],
+            display_frame.strides[0],
+            QImage.Format.Format_BGR888,
+        )
         self.video_label.set_frame_pixmap(QPixmap.fromImage(qimg), w, h, view_rect)
         # 状态文本不需要每帧刷新；低频刷新可以减少 PyQt 文本布局开销
         if self._render_counter % 3 == 0:
