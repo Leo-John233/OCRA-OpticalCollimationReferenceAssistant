@@ -3,8 +3,8 @@ chcp 65001 >nul
 setlocal EnableExtensions
 
 rem 目录版通用构建脚本
-rem 已激活虚拟环境时优先使用当前解释器
-rem 未激活虚拟环境时自动创建并复用本地构建环境
+rem 默认使用本地轻量构建环境以避免打入完整 Conda 科学计算运行库
+rem 启用 OCRA_USE_ACTIVE_ENV 开关时允许直接使用当前激活环境
 rem 依赖缺失时自动安装
 rem 请在终端中运行本脚本
 
@@ -14,7 +14,7 @@ set "BUILD_ENV=%PROJECT_ROOT%\py_build\.build_env"
 set "ENTRY_FILE=%PROJECT_ROOT%\main.py"
 set "REQUIREMENTS_FILE=%PROJECT_ROOT%\requirements.txt"
 set "ICON_FILE=%PROJECT_ROOT%\py_build\OCRA_icon.ico"
-set "RUNTIME_ICON=%PROJECT_ROOT%\py_build\OCRA_icon.png"
+set "RUNTIME_ICON=%PROJECT_ROOT%\py_build\OCRA_icon.ico"
 set "ZWO_DLL=%PROJECT_ROOT%\ASICamera2.dll"
 set "CONFIG_DIR=%PROJECT_ROOT%\config"
 set "DIST_ROOT=%PROJECT_ROOT%\py_build\dist"
@@ -25,24 +25,26 @@ echo ===================================================
 echo 正在构建 OCRA 目录版
 echo ===================================================
 
-rem 优先选择已激活的虚拟环境
+rem 默认复用项目专用的轻量构建环境
 set "PYTHON_EXE="
 set "PYTHON_SOURCE="
-if defined CONDA_PREFIX if exist "%CONDA_PREFIX%\python.exe" (
-    set "PYTHON_EXE=%CONDA_PREFIX%\python.exe"
-    set "PYTHON_SOURCE=已激活的 Conda 环境"
-)
-if not defined PYTHON_EXE if defined VIRTUAL_ENV if exist "%VIRTUAL_ENV%\Scripts\python.exe" (
-    set "PYTHON_EXE=%VIRTUAL_ENV%\Scripts\python.exe"
-    set "PYTHON_SOURCE=已激活的虚拟环境"
-)
+if not "%OCRA_USE_ACTIVE_ENV%"=="1" goto local_build_env
 
-rem 未激活虚拟环境时复用或创建本地构建环境
-if not defined PYTHON_EXE if exist "%BUILD_ENV%\Scripts\python.exe" (
-    set "PYTHON_EXE=%BUILD_ENV%\Scripts\python.exe"
-    set "PYTHON_SOURCE=本地构建环境"
-)
+rem 显式设置开关时优先使用当前激活环境
+if defined CONDA_PREFIX if exist "%CONDA_PREFIX%\python.exe" set "PYTHON_EXE=%CONDA_PREFIX%\python.exe"
+if defined PYTHON_EXE set "PYTHON_SOURCE=已激活的 Conda 环境"
 if defined PYTHON_EXE goto python_ready
+if defined VIRTUAL_ENV if exist "%VIRTUAL_ENV%\Scripts\python.exe" set "PYTHON_EXE=%VIRTUAL_ENV%\Scripts\python.exe"
+if defined PYTHON_EXE set "PYTHON_SOURCE=已激活的虚拟环境"
+if defined PYTHON_EXE goto python_ready
+
+:local_build_env
+if exist "%BUILD_ENV%\Scripts\python.exe" set "PYTHON_EXE=%BUILD_ENV%\Scripts\python.exe"
+if defined PYTHON_EXE set "PYTHON_SOURCE=本地轻量构建环境"
+if defined PYTHON_EXE goto python_ready
+
+rem 本地环境不存在时从可用基础解释器创建
+:create_build_env
 call :find_base_python
 if not defined BASE_PYTHON (
     echo [错误] 未找到可用的 Python
@@ -159,7 +161,11 @@ pushd "%PROJECT_ROOT%"
     --windowed ^
     --clean ^
     --noconfirm ^
+    --optimize 2 ^
     --icon "%ICON_FILE%" ^
+    --additional-hooks-dir "%PROJECT_ROOT%\py_build\hooks" ^
+    --exclude-module numpy.testing ^
+    --exclude-module PIL.ImageQt ^
     --distpath "%DIST_ROOT%" ^
     --workpath "%BUILD_ROOT%\work" ^
     --specpath "%BUILD_ROOT%\spec" ^
@@ -203,6 +209,14 @@ exit /b 0
 rem 查找用于创建本地构建环境的基础解释器
 :find_base_python
 set "BASE_PYTHON="
+if defined OCRA_BUILD_PYTHON if exist "%OCRA_BUILD_PYTHON%" set "BASE_PYTHON=%OCRA_BUILD_PYTHON%"
+if defined BASE_PYTHON exit /b 0
+if exist "D:\miniconda3\envs\Python3.13\python.exe" set "BASE_PYTHON=D:\miniconda3\envs\Python3.13\python.exe"
+if defined BASE_PYTHON exit /b 0
+if defined CONDA_PREFIX if exist "%CONDA_PREFIX%\python.exe" set "BASE_PYTHON=%CONDA_PREFIX%\python.exe"
+if defined BASE_PYTHON exit /b 0
+if defined VIRTUAL_ENV if exist "%VIRTUAL_ENV%\Scripts\python.exe" set "BASE_PYTHON=%VIRTUAL_ENV%\Scripts\python.exe"
+if defined BASE_PYTHON exit /b 0
 where py >nul 2>&1
 if errorlevel 1 goto find_python_command
 for /f "delims=" %%P in ('py -3.13 -c "import sys; print(sys.executable)" 2^>nul') do if not defined BASE_PYTHON set "BASE_PYTHON=%%P"

@@ -59,7 +59,9 @@ def main() -> int:
 
     application_icon = QIcon()
     for icon_path in [
+        resource_root() / "OCRA_icon.ico",
         resource_root() / "OCRA_icon.png",
+        resource_root() / "py_build" / "OCRA_icon.ico",
         resource_root() / "py_build" / "OCRA_icon.png",
     ]:
         if not icon_path.is_file():
