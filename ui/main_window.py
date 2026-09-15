@@ -401,15 +401,30 @@ class MainWindow(QMainWindow):
 
         # 右侧参数较多时使用滚动区
         # 参数栏内的滚轮只滚动页面并避免意外修改控件数值
+        self.control_sidebar = QWidget()
+        self.control_sidebar.setMinimumWidth(300)
+        self.control_sidebar.setMaximumWidth(420)
+        self.control_sidebar_layout = QVBoxLayout(self.control_sidebar)
+        self.control_sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        self.control_sidebar_layout.setSpacing(0)
+
         self.control_scroll = QScrollArea()
         self.control_scroll.setWidgetResizable(True)
-        self.control_scroll.setMinimumWidth(300)
-        self.control_scroll.setMaximumWidth(420)
         self.control_panel = QWidget()
         self.panel_layout = QVBoxLayout(self.control_panel)
         self.panel_layout.setContentsMargins(8, 8, 8, 8)
         self.control_scroll.setWidget(self.control_panel)
-        self.main_splitter.addWidget(self.control_scroll)
+        self.control_sidebar_layout.addWidget(self.control_scroll, stretch=1)
+
+        # 识别抽屉收起后在控制面板底部保留展开入口
+        self.btn_show_vision = QPushButton()
+        self.btn_show_vision.setFixedHeight(34)
+        self.btn_show_vision.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_show_vision.clicked.connect(self._toggle_vision_panel)
+        self.btn_show_vision.hide()
+        self.control_sidebar_layout.addWidget(self.btn_show_vision)
+
+        self.main_splitter.addWidget(self.control_sidebar)
         self.main_splitter.setStretchFactor(0, 1)
         self.main_splitter.setStretchFactor(1, 0)
         self.main_splitter.setSizes([1120, 330])
@@ -420,16 +435,20 @@ class MainWindow(QMainWindow):
         self._build_status_group()
         self.panel_layout.addStretch()
 
-        # 自动识别参数叠放在视频右下角并使用透明底色
-        # 浮层与视频共用网格单元因此不会压缩相机画面的可用高度
+        # 自动识别抽屉跨越平移滑块并紧贴控制栏和视频底边
+        # 抽屉与视频共用布局区域因此不会压缩相机画面的可用高度
         self._build_vision_group()
         video_grid.addWidget(
             self.vision_group,
             0,
             0,
+            2,
+            2,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
         )
         self.vision_group.raise_()
+        self.main_splitter.splitterMoved.connect(self._sync_vision_overlay_width)
+        QTimer.singleShot(0, self._sync_vision_overlay_width)
 
         # 一键收起右侧面板便于将窗口宽度全部用于相机画面
         self.btn_toggle_controls = QPushButton()
@@ -456,8 +475,8 @@ class MainWindow(QMainWindow):
 
     def _toggle_control_panel(self) -> None:
         """切换右侧控制面板并自动扩展视频区域"""
-        show_controls = self.control_scroll.isHidden()
-        self.control_scroll.setVisible(show_controls)
+        show_controls = self.control_sidebar.isHidden()
+        self.control_sidebar.setVisible(show_controls)
         if show_controls:
             total_width = max(1, self.main_splitter.width())
             self.main_splitter.setSizes([max(1, total_width - 330), 330])
@@ -466,6 +485,37 @@ class MainWindow(QMainWindow):
         self.btn_toggle_controls.setText(
             self.i18n.t("hide_controls") if show_controls else self.i18n.t("show_controls")
         )
+        if show_controls:
+            QTimer.singleShot(0, self._sync_vision_overlay_width)
+
+    def _sync_vision_overlay_width(self, *_args) -> None:
+        """让自动识别抽屉宽度跟随右侧控制面板"""
+        if self._vision_collapsed or self.control_sidebar.isHidden():
+            return
+        panel_width = self.control_sidebar.width()
+        if panel_width <= 0:
+            return
+        self._vision_expanded_width = max(300, min(420, panel_width))
+        self.vision_group.setFixedWidth(self._vision_expanded_width)
+
+    def _toggle_vision_panel(self) -> None:
+        """将自动识别参数折叠到右侧控制面板边缘"""
+        self._vision_collapsed = not self._vision_collapsed
+        expanded = not self._vision_collapsed
+        self.vision_content.setVisible(expanded)
+        self.vision_group.setVisible(expanded)
+        self.btn_show_vision.setVisible(not expanded)
+        if expanded:
+            self.vision_group.setMaximumHeight(16777215)
+            self._sync_vision_overlay_width()
+        self.btn_toggle_vision.setText(
+            f"{self.i18n.t('vision')}  {'›' if expanded else '‹'}"
+        )
+        self.btn_show_vision.setText(self.i18n.t("expand_vision"))
+        self.btn_toggle_vision.setToolTip(
+            self.i18n.t("collapse_vision_hint") if expanded else self.i18n.t("expand_vision_hint")
+        )
+        self.btn_show_vision.setToolTip(self.i18n.t("expand_vision_hint"))
 
     def _build_control_group(self) -> None:
         """构建启动、停止、重置和环境检测操作区"""
@@ -783,58 +833,61 @@ class MainWindow(QMainWindow):
         self.panel_layout.addWidget(self.overlay_group)
 
     def _build_vision_group(self) -> None:
-        """构建透明且高对比度的自动识别参数浮层"""
+        """构建贴合控制面板的透明自动识别抽屉"""
+        self._vision_collapsed = False
+        self._vision_expanded_width = 330
         self.vision_group = QGroupBox()
         self.vision_group.setObjectName("visionOverlay")
         self.vision_group.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.vision_group.setMinimumWidth(330)
-        self.vision_group.setMaximumWidth(380)
+        self.vision_group.setFixedWidth(self._vision_expanded_width)
         self.vision_group.setStyleSheet(
             """
             QGroupBox#visionOverlay {
                 color: #f7fbff;
                 background-color: rgba(8, 18, 31, 88);
                 border: 1px solid rgba(210, 232, 255, 145);
-                border-radius: 10px;
-                margin-top: 11px;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 0;
+                border-bottom-left-radius: 0;
+                border-bottom-right-radius: 0;
                 font-weight: 600;
             }
-            QGroupBox#visionOverlay::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                left: 12px;
-                padding: 0 6px;
+            QGroupBox#visionOverlay QPushButton#visionToggleButton {
                 color: #ffffff;
-                background-color: transparent;
+                background: transparent;
+                border: none;
+                border-radius: 6px;
+                padding: 3px 7px;
+                text-align: left;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            QGroupBox#visionOverlay QPushButton#visionToggleButton:hover {
+                background: rgba(72, 156, 211, 70);
             }
             QGroupBox#visionOverlay QLabel {
                 color: #f7fbff;
                 background-color: transparent;
             }
-            QGroupBox#visionOverlay QSlider::groove:horizontal {
-                height: 5px;
-                background: rgba(225, 238, 250, 105);
-                border-radius: 2px;
-            }
-            QGroupBox#visionOverlay QSlider::sub-page:horizontal {
-                background: #20a7f2;
-                border-radius: 2px;
-            }
-            QGroupBox#visionOverlay QSlider::handle:horizontal {
-                width: 14px;
-                margin: -5px 0;
-                background: #ffffff;
-                border: 2px solid #20a7f2;
-                border-radius: 8px;
-            }
-            QGroupBox#visionOverlay QSlider::handle:horizontal:hover {
-                background: #dff4ff;
-                border-color: #62c8ff;
-            }
             """
         )
-        layout = QGridLayout(self.vision_group)
-        layout.setContentsMargins(10, 10, 10, 9)
+        root_layout = QVBoxLayout(self.vision_group)
+        root_layout.setContentsMargins(7, 6, 7, 7)
+        root_layout.setSpacing(2)
+
+        # 标题放入透明框内并兼作抽屉折叠按钮
+        self.btn_toggle_vision = QPushButton()
+        self.btn_toggle_vision.setObjectName("visionToggleButton")
+        self.btn_toggle_vision.setFixedHeight(28)
+        self.btn_toggle_vision.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle_vision.clicked.connect(self._toggle_vision_panel)
+        root_layout.addWidget(self.btn_toggle_vision)
+
+        self.vision_content = QWidget()
+        self.vision_content.setStyleSheet("background: transparent")
+        root_layout.addWidget(self.vision_content)
+        layout = QGridLayout(self.vision_content)
+        layout.setContentsMargins(3, 1, 3, 1)
         layout.setHorizontalSpacing(7)
         layout.setVerticalSpacing(4)
         layout.setColumnStretch(1, 1)
@@ -1224,7 +1277,14 @@ class MainWindow(QMainWindow):
         self.star_angle_label.setText(t("angle"))
         self.star_color_label.setText(t("color"))
 
-        self.vision_group.setTitle(t("vision"))
+        self.btn_toggle_vision.setText(
+            f"{t('vision')}  {'‹' if self._vision_collapsed else '›'}"
+        )
+        self.btn_toggle_vision.setToolTip(
+            t("expand_vision_hint") if self._vision_collapsed else t("collapse_vision_hint")
+        )
+        self.btn_show_vision.setText(t("expand_vision"))
+        self.btn_show_vision.setToolTip(t("expand_vision_hint"))
         self.roi_label.setText(t("vision_roi_compact"))
         self.threshold_label.setText(t("vision_threshold_compact"))
         self.band_label.setText(t("vision_band_compact"))
@@ -1232,7 +1292,7 @@ class MainWindow(QMainWindow):
         self.secondary_sensitivity_label.setText(t("vision_secondary_sensitivity_compact"))
         self.vision_help_label.setText(t("vision_help_compact"))
         self.vision_help_label.setToolTip(t("vision_help"))
-        controls_visible = not self.control_scroll.isHidden()
+        controls_visible = not self.control_sidebar.isHidden()
         self.btn_toggle_controls.setText(t("hide_controls") if controls_visible else t("show_controls"))
         self.btn_toggle_controls.setToolTip(t("toggle_controls_hint"))
 
