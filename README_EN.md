@@ -244,23 +244,31 @@ The project provides two general-purpose PyInstaller scripts:
 - `py_build/build_exe.bat`: folder distribution with faster startup; distribute the entire `py_build/dist/OCRA` directory
 - `py_build/build_single_exe.bat`: single-file distribution that extracts to a temporary directory during startup
 
-The scripts select the build environment in this order:
+By default, the scripts select the build environment in this order:
 
-1. Use the currently active Conda or standard virtual environment
-2. Reuse `py_build/.build_env` when no virtual environment is active
-3. Create `py_build/.build_env` from an installed system Python when the local build environment does not exist
+1. Reuse the dedicated lightweight `py_build/.build_env` environment
+2. If it does not exist, create it with the interpreter specified by `OCRA_BUILD_PYTHON`
+3. Otherwise try `D:\miniconda3\envs\Python3.13\python.exe` or another available 64-bit Python installation
+
+The dedicated environment prevents unused components such as MKL from a full Conda environment from entering the release. Custom hooks also exclude the unused FFmpeg video-file codec bundle and Pillow image plug-ins without affecting USB cameras, ASI cameras, screenshots, or interface rendering.
 
 If dependencies are missing, the scripts install the project requirements and PyInstaller automatically. Without an existing virtual environment, only a system installation of 64-bit Python 3.10 or newer is required. The first dependency installation requires access to a Python package index.
 
 ### One-Click Build
 
-You may use an already activated virtual environment:
+No environment activation is required by default. Run either script to create and reuse the lightweight build environment automatically.
+
+To choose the Python interpreter used to create that environment:
 
 ```powershell
-conda activate Python3.13
+$env:OCRA_BUILD_PYTHON = "D:\miniconda3\envs\Python3.13\python.exe"
 ```
 
-You may also run without activating a virtual environment. The scripts create and reuse the local build environment automatically.
+To temporarily use the currently active Conda or standard virtual environment instead:
+
+```powershell
+$env:OCRA_USE_ACTIVE_ENV = "1"
+```
 
 Build the folder distribution:
 

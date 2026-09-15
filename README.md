@@ -244,23 +244,31 @@ OCRA 是一款面向反射式望远镜光轴准直的桌面应用它通过 ZWO A
 - `py_build/build_exe.bat`：目录版，启动较快，发布时需要复制整个 `py_build/dist/OCRA` 目录
 - `py_build/build_single_exe.bat`：单文件版，启动时需要先解压到临时目录
 
-脚本按以下顺序选择构建环境：
+脚本默认按以下顺序选择构建环境：
 
-1. 优先使用当前已激活的 Conda 或普通虚拟环境
-2. 没有激活虚拟环境时，复用 `py_build/.build_env`
-3. 本地构建环境不存在时，从系统 Python 自动创建 `py_build/.build_env`
+1. 优先复用 `py_build/.build_env` 专用轻量环境
+2. 本地构建环境不存在时，优先使用 `OCRA_BUILD_PYTHON` 指定的解释器创建环境
+3. 未指定解释器时，尝试使用 `D:\miniconda3\envs\Python3.13\python.exe` 或其他可用的 64 位 Python 创建环境
 
-如果依赖缺失，脚本会自动安装 `requirements.txt` 和 PyInstaller 中的构建依赖没有虚拟环境时，只需要系统中已安装 64 位 Python 3.10 或更高版本首次安装依赖需要能够访问 Python 软件包源
+专用轻量环境可避免把完整 Conda 环境中的 MKL 等未使用组件打进发布包，自定义打包钩子还会排除本项目未使用的视频文件 FFmpeg 编解码附件和 Pillow 图片插件，不影响 USB 相机、ASI 相机、截图及界面绘制
+
+如果依赖缺失，脚本会自动安装 `requirements.txt` 和 PyInstaller 中的构建依赖，没有虚拟环境时只需要系统中已安装 64 位 Python 3.10 或更高版本，首次安装依赖需要能够访问 Python 软件包源
 
 ### 一键打包
 
-可以直接使用已经激活的虚拟环境：
+默认无需激活环境，直接运行脚本即可自动创建并复用轻量构建环境
+
+如需指定本机用于创建构建环境的 Python：
 
 ```powershell
-conda activate Python3.13
+$env:OCRA_BUILD_PYTHON = "D:\miniconda3\envs\Python3.13\python.exe"
 ```
 
-也可以不激活任何虚拟环境，脚本会自动创建并复用本地构建环境
+如需临时改用当前已激活的 Conda 或普通虚拟环境：
+
+```powershell
+$env:OCRA_USE_ACTIVE_ENV = "1"
+```
 
 构建目录版：
 
@@ -274,7 +282,7 @@ conda activate Python3.13
 .\py_build\build_single_exe.bat
 ```
 
-建议在项目目录的终端中运行脚本，以便查看完整构建日志脚本会检查 Python 版本、64 位架构、构建依赖和必要文件，并通过当前选定解释器的 `python -m PyInstaller` 执行打包
+建议在项目目录的终端中运行脚本，以便查看完整构建日志，脚本会检查 Python 版本、64 位架构、构建依赖和必要文件，并通过当前选定解释器的 `python -m PyInstaller` 执行打包
 
 构建结果分别位于：
 
