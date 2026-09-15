@@ -350,19 +350,21 @@ class MainWindow(QMainWindow):
     # UI 构建
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
-        """构建视频区、控制面板、识别参数区和滚轮交互"""
+        """构建视频区、控制面板、识别参数浮层和滚轮交互"""
         root = QWidget()
         self.setCentralWidget(root)
         main_layout = QHBoxLayout(root)
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(8)
 
-        # 左侧视频画面鼠标拖动会更新“参考中心/零点”
-        # 放大后，右侧和下方各有一个平移滑条，用来移动当前裁剪视野
+        # 左侧视频画面鼠标拖动会更新参考中心
+        # 放大后使用右侧和下方滑条移动当前裁剪视野
         video_area = QWidget()
         video_grid = QGridLayout(video_area)
         video_grid.setContentsMargins(0, 0, 0, 0)
         video_grid.setSpacing(4)
+        video_grid.setRowStretch(0, 1)
+        video_grid.setColumnStretch(0, 1)
 
         self.video_label = InteractiveVideoLabel()
         self.video_label.center_changed.connect(self._set_center_from_mouse)
@@ -373,7 +375,7 @@ class MainWindow(QMainWindow):
         self.view_pan_y_slider.setRange(-1500, 1500)
         self.view_pan_y_slider.setValue(int(self.config.view_pan_y))
         self.view_pan_y_slider.setFixedWidth(22)
-        # 让滑块向下拖动时数值增大，对应“查看画面下方”
+        # 向下拖动时数值增大并查看画面下方
         self.view_pan_y_slider.setInvertedAppearance(True)
         self.view_pan_y_slider.valueChanged.connect(self._on_view_pan_y)
         video_grid.addWidget(self.view_pan_y_slider, 0, 1)
@@ -390,9 +392,8 @@ class MainWindow(QMainWindow):
         video_grid.addWidget(corner, 1, 1)
         main_layout.addWidget(video_area, stretch=1)
 
-        # 右侧控制面板内容较多，所以使用滚动区
-        # 关键交互规则：鼠标滚轮在右侧参数栏内只负责上下滚动页面，
-        # 不允许误改 QSpinBox、QDoubleSpinBox、QComboBox 或 QSlider 的数值
+        # 右侧参数较多时使用滚动区
+        # 参数栏内的滚轮只滚动页面并避免意外修改控件数值
         self.control_scroll = QScrollArea()
         self.control_scroll.setWidgetResizable(True)
         self.control_scroll.setFixedWidth(380)
@@ -408,16 +409,18 @@ class MainWindow(QMainWindow):
         self._build_status_group()
         self.panel_layout.addStretch()
 
-        # 自动识别参数不再放在右侧长滚动栏里，而是放在左侧画面下方右下角
-        # 光轴调节时用户眼睛主要盯着画面，边看边微调 ROI/阈值/边缘带宽会更顺手
+        # 自动识别参数叠放在视频右下角并使用透明底色
+        # 浮层与视频共用网格单元因此不会压缩相机画面的可用高度
         self._build_vision_group()
-        # 自动识别参数只作为微调工具显示在画面右下角
-        # 控制宽度，避免挤占左侧预览画面的垂直空间
-        self.vision_group.setMaximumWidth(420)
-        video_grid.addWidget(self.vision_group, 2, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        video_grid.addWidget(
+            self.vision_group,
+            0,
+            0,
+            alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
+        )
+        self.vision_group.raise_()
 
-        # 所有右侧子控件创建完成后统一安装滚轮过滤器，
-        # 这样滚轮不会改参数，只会滚动右侧控制页
+        # 所有右侧子控件创建完成后统一安装滚轮过滤器
         self._install_control_panel_wheel_filter()
         self.resize(1380, 820)
 
@@ -737,19 +740,60 @@ class MainWindow(QMainWindow):
         self.panel_layout.addWidget(self.overlay_group)
 
     def _build_vision_group(self) -> None:
-        """构建紧凑的自动识别参数面板
-
-        这个面板位于画面右下角，只用于边看画面边微调识别参数
-        因为它会直接占用视频预览区下方空间，所以这里采用单列表格：
-        参数名 + 短滑条 + 数值，去掉大段分组标题，说明文字压缩成两行
-        """
+        """构建透明且高对比度的自动识别参数浮层"""
         self.vision_group = QGroupBox()
+        self.vision_group.setObjectName("visionOverlay")
+        self.vision_group.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.vision_group.setMinimumWidth(360)
         self.vision_group.setMaximumWidth(420)
+        self.vision_group.setStyleSheet(
+            """
+            QGroupBox#visionOverlay {
+                color: #f7fbff;
+                background-color: rgba(8, 18, 31, 158);
+                border: 1px solid rgba(210, 232, 255, 185);
+                border-radius: 10px;
+                margin-top: 11px;
+                font-weight: 600;
+            }
+            QGroupBox#visionOverlay::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 12px;
+                padding: 0 6px;
+                color: #ffffff;
+                background-color: transparent;
+            }
+            QGroupBox#visionOverlay QLabel {
+                color: #f7fbff;
+                background-color: transparent;
+            }
+            QGroupBox#visionOverlay QSlider::groove:horizontal {
+                height: 5px;
+                background: rgba(225, 238, 250, 105);
+                border-radius: 2px;
+            }
+            QGroupBox#visionOverlay QSlider::sub-page:horizontal {
+                background: #20a7f2;
+                border-radius: 2px;
+            }
+            QGroupBox#visionOverlay QSlider::handle:horizontal {
+                width: 14px;
+                margin: -5px 0;
+                background: #ffffff;
+                border: 2px solid #20a7f2;
+                border-radius: 8px;
+            }
+            QGroupBox#visionOverlay QSlider::handle:horizontal:hover {
+                background: #dff4ff;
+                border-color: #62c8ff;
+            }
+            """
+        )
         layout = QGridLayout(self.vision_group)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setHorizontalSpacing(6)
-        layout.setVerticalSpacing(3)
+        layout.setContentsMargins(10, 10, 10, 9)
+        layout.setHorizontalSpacing(7)
+        layout.setVerticalSpacing(4)
         layout.setColumnStretch(1, 1)
 
         self.roi_slider, self.roi_value = self._make_slider(10, 500, self.config.snap_roi, self._on_roi)
@@ -758,7 +802,7 @@ class MainWindow(QMainWindow):
         self.secondary_band_slider, self.secondary_band_value = self._make_slider(8, 260, self.config.secondary_edge_band_width, self._on_secondary_band)
         self.secondary_sensitivity_slider, self.secondary_sensitivity_value = self._make_slider(0, 100, self.config.secondary_edge_sensitivity, self._on_secondary_sensitivity)
 
-        # 缩短数值列宽度，并限制滑条高度，让整个面板更紧凑
+        # 数值使用强调色并固定宽度以减少滑动时的布局跳动
         for slider, value_label in [
             (self.roi_slider, self.roi_value),
             (self.threshold_slider, self.threshold_value),
@@ -766,25 +810,27 @@ class MainWindow(QMainWindow):
             (self.secondary_band_slider, self.secondary_band_value),
             (self.secondary_sensitivity_slider, self.secondary_sensitivity_value),
         ]:
-            slider.setFixedHeight(18)
-            value_label.setFixedWidth(34)
+            slider.setFixedHeight(20)
+            slider.setCursor(Qt.CursorShape.PointingHandCursor)
+            value_label.setFixedWidth(36)
             value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            value_label.setStyleSheet("font-size: 11px;")
+            value_label.setStyleSheet("color: #8fddff; font-size: 11px; font-weight: 700")
 
         def make_label() -> QLabel:
-            """创建紧凑的识别参数名称标签"""
+            """创建易扫读的识别参数名称标签"""
             label = QLabel()
             label.setFixedWidth(98)
             label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            label.setStyleSheet("font-size: 11px;")
+            label.setStyleSheet("color: #f7fbff; font-size: 11px; font-weight: 600")
             return label
 
         def make_slider_cell(slider: QSlider, value_label: QLabel) -> QWidget:
-            """将识别参数滑块和数值标签组合为单元格"""
+            """组合识别参数滑块和数值标签"""
             row = QWidget()
+            row.setStyleSheet("background: transparent")
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(4)
+            row_layout.setSpacing(5)
             row_layout.addWidget(slider, stretch=1)
             row_layout.addWidget(value_label)
             return row
@@ -809,11 +855,11 @@ class MainWindow(QMainWindow):
         self.vision_help_label = QLabel()
         self.vision_help_label.setWordWrap(True)
         self.vision_help_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.vision_help_label.setMaximumHeight(34)
+        self.vision_help_label.setMaximumHeight(36)
         self.vision_help_label.setStyleSheet(
-            "color: #555; font-size: 10px; "
-            "background: rgba(255,255,255,0.35); border: 1px solid #d6d6d6; "
-            "border-radius: 3px; padding: 3px;"
+            "color: #e7f5ff; font-size: 10px; font-weight: 500; "
+            "background: rgba(1,8,16,118); border: 1px solid rgba(190,225,255,95); "
+            "border-radius: 5px; padding: 4px"
         )
         layout.addWidget(self.vision_help_label, len(rows), 0, 1, 2)
 
