@@ -1,36 +1,39 @@
 OCRA Startup Diagnostics / OCRA 启动诊断
-Generated / 生成时间: 2026-08-13 15:45:12
-Executable / 程序: D:\miniconda3\envs\Python3.13\python.exe
+Generated / 生成时间: 2026-09-16 02:51:30
+Executable / 程序: D:\miniconda3\envs\ScanToCadInspection\python.exe
 Working directory / 工作目录: E:\GitHub
 Frozen / 打包模式: False
 ================================================================================
-01. [PASS] Python 3.13.15 (64-bit)
-    Detail / 详情: executable=D:\miniconda3\envs\Python3.13\python.exe
+01. [PASS] Python 3.11.16 (64-bit)
+    Detail / 详情: executable=D:\miniconda3\envs\ScanToCadInspection\python.exe
 
-02. [PASS] 64 位进程：AMD64
+02. [PASS] 已预加载 Windows ICU，避免 Conda ICU 与 PyQt6 冲突
+    Detail / 详情: C:\Windows\System32\icuuc.dll
 
-03. [PASS] Windows 10.0, build 26200
+03. [PASS] 64 位进程：AMD64
 
-04. [PASS] Microsoft Visual C++ x64 运行库可加载
+04. [PASS] Windows 10.0, build 26200
 
-05. [INFO] 已配置 Windows DLL 与 Qt 插件搜索路径
-    Detail / 详情: dll_dirs=['E:\\GitHub\\OCRA'] | plugin_dirs=[]
+05. [PASS] Microsoft Visual C++ x64 运行库可加载
 
-06. [INFO] 当前为 Python 源码运行模式
+06. [INFO] 已配置 Windows DLL 与 Qt 插件搜索路径
+    Detail / 详情: dll_dirs=['E:\\GitHub\\OCRA', 'E:\\GitHub\\OCRA\\.serena\\cache\\uv\\archive-v0\\JTk1Kp77O0O8m2Wy\\PyQt6\\Qt6\\bin', 'D:\\miniconda3\\envs\\Python3.13\\Lib\\site-packages\\PyQt6\\Qt6\\bin', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\bin'] | plugin_dirs=['E:\\GitHub\\OCRA\\.serena\\cache\\uv\\archive-v0\\JTk1Kp77O0O8m2Wy\\PyQt6\\Qt6\\plugins', 'E:\\GitHub\\OCRA\\.serena\\cache\\uv\\archive-v0\\JTk1Kp77O0O8m2Wy\\PyQt6\\Qt6\\plugins\\platforms', 'D:\\miniconda3\\envs\\Python3.13\\Lib\\site-packages\\PyQt6\\Qt6\\plugins', 'D:\\miniconda3\\envs\\Python3.13\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\platforms', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\plugins', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\plugins\\platforms']
 
-07. [FAIL] PyQt6.QtWidgets 无法导入，图形界面无法启动
+07. [INFO] 当前为 Python 源码运行模式
+
+08. [FAIL] PyQt6.QtWidgets 无法导入，图形界面无法启动
     Detail / 详情: Traceback (most recent call last):
-  File "e:\GitHub\OCRA\core\startup_guard.py", line 364, in _check_required_imports
+  File "e:\GitHub\OCRA\core\startup_guard.py", line 405, in _check_required_imports
     from PyQt6 import QtCore, QtGui, QtWidgets  # noqa: F401
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-ImportError: DLL load failed while importing QtCore: 找不到指定的程序。
+ModuleNotFoundError: No module named 'PyQt6'
     Action / 建议: 优先修复 VC++ x64 运行库；若仍失败，请用 OCRA.spec 重新打包并完整发送整个 OCRA 文件夹
 
-08. [PASS] NumPy 可正常导入：2.5.2
-    Detail / 详情: D:\miniconda3\envs\Python3.13\Lib\site-packages\numpy\__init__.py
+09. [PASS] NumPy 可正常导入：2.4.6
+    Detail / 详情: D:\miniconda3\envs\ScanToCadInspection\Lib\site-packages\numpy\__init__.py
 
-09. [PASS] OpenCV 可正常导入：5.0.0
-    Detail / 详情: D:\miniconda3\envs\Python3.13\Lib\site-packages\cv2\__init__.py
+10. [PASS] OpenCV 可正常导入：4.14.0
+    Detail / 详情: D:\miniconda3\envs\ScanToCadInspection\Lib\site-packages\cv2\__init__.py
 
-10. [PASS] Pillow 可正常导入：12.3.0
-    Detail / 详情: D:\miniconda3\envs\Python3.13\Lib\site-packages\PIL\__init__.py
+11. [PASS] Pillow 可正常导入：12.3.0
+    Detail / 详情: D:\miniconda3\envs\ScanToCadInspection\Lib\site-packages\PIL\__init__.py
