@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .venv/
 .build_env/
+/pyrightconfig.json
+/pyrightconfig.json.tmp
 
 # PyInstaller intermediate files and distributable artifacts
 build/

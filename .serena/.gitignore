@@ -1,2 +1,4 @@
 /cache
 /project.local.yml
+/python-env.local.json
+/python-env.local.json.tmp

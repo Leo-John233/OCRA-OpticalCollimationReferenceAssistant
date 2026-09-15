@@ -49,7 +49,7 @@ encoding: "utf-8"
 # abort activation. a per-project timeout (activation_command_timeout, default 180s) is the safety
 # backstop for non-terminating commands; on expiry the process is killed and activation continues.
 # example: activation_command: "npx nx run-many -t build"
-activation_command:
+activation_command: "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .serena/select_python_env.ps1"
 
 # maximum time in seconds to wait for activation_command to complete before killing it (default 180s).
 # must be a positive number.

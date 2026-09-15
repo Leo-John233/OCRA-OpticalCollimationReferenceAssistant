@@ -10,8 +10,5 @@
     ".venv",
     "py_build"
   ],
-  "venvPath": ".",
-  "venv": ".venv",
-  "pythonVersion": "3.13",
   "pythonPlatform": "Windows"
 }
