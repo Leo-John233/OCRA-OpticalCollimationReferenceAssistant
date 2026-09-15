@@ -1,4 +1,6 @@
-PyQt6>=6.6
+# 固定 Qt 运行库版本以避免 Conda ICU 入口点冲突
+PyQt6==6.8.1
+PyQt6-Qt6==6.8.1
 opencv-python-headless>=4.8
 numpy>=1.24
 Pillow>=10.0
