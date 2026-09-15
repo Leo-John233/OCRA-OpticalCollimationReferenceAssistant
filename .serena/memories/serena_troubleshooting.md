@@ -1,11 +1,17 @@
-# Serena troubleshooting (Windows/local setup)
+# Serena troubleshooting on Windows
 
-- Current project config: `.serena/project.yml`, language server `python`, UTF-8, workspace root `.`; `pyrightconfig.json` selects `.venv`.
-- On this workstation `.venv` is a gitignored directory junction to `D:\miniconda3\envs\Python3.13`. That environment contains PyQt6/OpenCV/NumPy/Pillow and uses `.venv\python.exe`.
-- Pyright `reportMissingImports`: verify the junction target and imports with `& .\.venv\python.exe -c "import PyQt6, cv2, numpy, PIL"`; then restart the Serena Python language server. Switching to another project and reactivating OCRA also forces a clean server start when the restart tool is unavailable.
-- A stale language-server process can retain diagnostics created before the environment/config existed; a clean restart is required after changing `pyrightconfig.json` or interpreter paths.
-- uv `Failed to initialize cache ... PermissionError` in a restricted session: set `$env:UV_CACHE_DIR="$PWD\.serena\cache\uv"`; the cache path is project-writable and ignored.
-- Serena CLI `PermissionError: C:\Users\...\.serena` in a restricted session: set `$env:SERENA_HOME="$PWD\.serena\cache\cli-home"`. This override has its own config/project registry.
-- Serena CLI `UnicodeEncodeError: gbk ... ✓` on Chinese Windows: set `$env:PYTHONUTF8="1"` and `$env:PYTHONIOENCODING="utf-8"` before the CLI call.
-- Verified memory audit form in this session: `serena memories check <absolute-project-path> --include-unmarked --fuzzy-matching`; result had no integrity issues.
-- Serena is healthy when `get_current_config` reports active project OCRA / LSP ready and symbol lookup, reference lookup, and diagnostics calls all return normally.
+- Serena and Pyright no longer depend on the optional project-root `.venv` junction
+- The tracked `pyrightconfig.base.json` contains shared analysis scope while the generated `pyrightconfig.json` contains local environment paths and is ignored by Git
+- The local selection is stored in ignored `.serena/python-env.local.json`
+- `.serena/select_python_env.ps1` validates the interpreter and required imports before atomically replacing the local state and Pyright configuration
+- Serena runs that selector automatically through `.serena/project.yml` `activation_command` before starting the language server
+- List environments with `.\.serena\select_python_env.ps1 -List`
+- Select an analysis environment with `.\.serena\select_python_env.ps1 -Name Python3.13`
+- Override the root with `-EnvRoot` or `SERENA_ENV_ROOT` and the name with `SERENA_PYTHON_ENV`
+- A rejected environment does not overwrite the last valid selection
+- If diagnostics remain stale after a valid switch, reactivate OCRA to start a clean language-server session
+- The selector is UTF-8 BOM with CRLF because Windows PowerShell 5.1 can misparse UTF-8 Chinese text without a BOM
+- For uv cache permission errors in restricted sessions set `UV_CACHE_DIR` to `$PWD\.serena\cache\uv`
+- For Serena home permission errors set `SERENA_HOME` to `$PWD\.serena\cache\cli-home`
+- For Chinese console encoding errors set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8`
+- Serena is healthy when OCRA is active, the Python LSP reports ready, and diagnostics contain no missing-import errors

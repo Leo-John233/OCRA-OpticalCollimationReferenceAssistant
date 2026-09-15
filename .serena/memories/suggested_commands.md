@@ -1,14 +1,15 @@
-# Suggested commands (Windows PowerShell, project root)
+# Suggested commands on Windows PowerShell
 
-- Local interpreter: `.venv` is a gitignored junction to `D:\miniconda3\envs\Python3.13`; verify with `Get-Item .venv | Select-Object LinkType,Target`.
-- Install/update dependencies in that environment: `.\.venv\python.exe -m pip install -r requirements.txt`
-- Run from source: `.\.venv\python.exe main.py`
-- Syntax/import compilation: `.\.venv\python.exe -m compileall -q main.py cameras core ui`
-- Hardware-free environment report: `.\.venv\python.exe -c "from core.app_state import AppConfig; from core.environment_check import run_environment_check; r=run_environment_check(AppConfig(), probe_hardware=False); print(r.to_text()); raise SystemExit(1 if r.has_errors else 0)"`
-- Synthetic-camera smoke test: `.\.venv\python.exe -c "from core.app_state import AppConfig; from cameras.factory import create_camera; c=create_camera(AppConfig()); assert c.open(); ok, frame=c.read_frame(); assert ok and frame is not None; c.close(); print(frame.shape)"`
+- List Serena analysis environments: `.\.serena\select_python_env.ps1 -List`
+- Select the stable analysis environment: `.\.serena\select_python_env.ps1 -Name Python3.13`
+- Select an environment from another root: `.\.serena\select_python_env.ps1 -Name <name> -EnvRoot <path>`
+- Install project dependencies into a target environment: `& "D:\miniconda3\envs\<name>\python.exe" -m pip install -r requirements.txt`
+- Actual runtime environments may be activated independently with Conda and do not change Serena analysis
+- Optional local runtime alias: `.venv` may point to `D:\miniconda3\envs\Python3.13`, but Serena does not depend on it
+- Run from source in an activated environment: `python main.py`
+- Compile check in an activated environment: `python -m compileall -q main.py cameras core ui`
 - Build directory distribution: `.\py_build\build_exe.bat`
 - Build single EXE: `.\py_build\build_single_exe.bat`
-- Outputs: `py_build\dist\OCRA\OCRA.exe` and `py_build\dist_single\OCRA_Single.exe`.
-- No activation is required; invoke `.\.venv\python.exe` directly. If the junction is absent, use `D:\miniconda3\envs\Python3.13\python.exe`.
-- Serena memory reference audit: `serena memories check`.
-- Windows equivalents used during inspection: `Get-ChildItem` for listing; `rg`/`rg --files` for search.
+- Outputs: `py_build\dist\OCRA\OCRA.exe` and `py_build\dist_single\OCRA_Single.exe`
+- Serena memory reference audit: `serena memories check`
+- Use `rg` and `rg --files` for project search

@@ -142,7 +142,7 @@ Recommended environment:
 
 - Windows 10/11 64-bit
 - Python 3.12 or 3.13, 64-bit
-- PyQt6 6.6 or later
+- PyQt6 6.8.1
 - OpenCV 4.8 or later
 - NumPy 1.24 or later
 - Pillow 10.0 or later
@@ -154,6 +154,30 @@ Using a ZWO ASI camera also requires:
 - The camera is not exclusively occupied by ASIStudio, SharpCap, or another program
 
 > Model-specific or DirectShow DLLs such as `ASI662MM-Pro.dll` and `ASI120MM.dll` are not SDK entry points OCRA requires the SDK DLL named `ASICamera2.dll`
+
+---
+
+## Switching Serena Environments
+
+Serena now uses an independent local environment selection instead of depending on the `.venv` junction in the project root. Switching the runtime environment therefore does not affect code indexing or import diagnostics.
+
+List environments under `D:\miniconda3\envs`:
+
+```powershell
+.\.serena\select_python_env.ps1 -List
+```
+
+Select the environment Serena should use for analysis:
+
+```powershell
+.\.serena\select_python_env.ps1 -Name Python3.13
+```
+
+The selection is stored in the ignored `.serena/python-env.local.json` file, and the generated `pyrightconfig.json` is also excluded from Git. Every Serena project activation validates the selected environment and refreshes the configuration automatically.
+
+If the selected environment lacks PyQt6, OpenCV, NumPy, or Pillow, the switch is rejected and the last valid environment remains active. Install `requirements.txt` as directed by the error message, then switch again.
+
+For another environment root, pass `-EnvRoot` or set the `SERENA_ENV_ROOT` and `SERENA_PYTHON_ENV` environment variables. If diagnostics remain stale after a switch, reactivate the OCRA project once.
 
 ---
 

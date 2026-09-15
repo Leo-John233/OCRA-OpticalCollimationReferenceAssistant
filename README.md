@@ -142,7 +142,7 @@ OCRA 是一款面向反射式望远镜光轴准直的桌面应用它通过 ZWO A
 
 - Windows 10/11 64 位
 - Python 3.12 或 3.13，64 位
-- PyQt6 6.6 及以上
+- PyQt6 6.8.1
 - OpenCV 4.8 及以上
 - NumPy 1.24 及以上
 - Pillow 10.0 及以上
@@ -154,6 +154,30 @@ OCRA 是一款面向反射式望远镜光轴准直的桌面应用它通过 ZWO A
 - 相机未被 ASIStudio、SharpCap 或其他程序独占
 
 > `ASI662MM-Pro.dll`、`ASI120MM.dll` 等型号或 DirectShow DLL 不是 SDK 入口OCRA 需要的是文件名为 `ASICamera2.dll` 的 SDK DLL
+
+---
+
+## Serena 多环境切换
+
+Serena 使用独立的本机环境选择，不再依赖项目根目录的 `.venv` 联接，因此切换实际运行环境不会影响代码索引和导入诊断
+
+列出 `D:\miniconda3\envs` 中的环境：
+
+```powershell
+.\.serena\select_python_env.ps1 -List
+```
+
+切换 Serena 分析环境：
+
+```powershell
+.\.serena\select_python_env.ps1 -Name Python3.13
+```
+
+环境选择保存在已忽略的 `.serena/python-env.local.json`，生成的 `pyrightconfig.json` 同样不会进入 Git每次激活 Serena 项目时都会自动验证环境并刷新配置
+
+如果目标环境缺少 PyQt6、OpenCV、NumPy 或 Pillow，脚本会拒绝切换并保留上一个有效环境按错误提示安装 `requirements.txt` 后即可再次切换
+
+需要使用其他环境根目录时，可以传入 `-EnvRoot`，或设置 `SERENA_ENV_ROOT` 和 `SERENA_PYTHON_ENV` 环境变量切换后如诊断尚未刷新，重新激活一次 OCRA 项目即可
 
 ---
 

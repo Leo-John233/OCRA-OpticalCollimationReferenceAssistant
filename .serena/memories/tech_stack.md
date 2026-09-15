@@ -1,8 +1,14 @@
 # Technology stack
 
-- Python desktop application; supported source runtime is 64-bit Python 3.12 or 3.13 (startup guard accepts >=3.10; README recommends 3.12/3.13).
-- GUI: PyQt6 >=6.6. Vision/capture: opencv-python-headless >=4.8, NumPy >=1.24. Text rendering: Pillow >=10.
-- ZWO integration uses bundled official `ASICamera2.dll` directly through `ctypes`; no `zwoasi` wrapper. USB/UVC uses OpenCV `VideoCapture`.
-- Dependencies are declared in `requirements.txt`; no `pyproject.toml`, lockfile, test framework, linter, formatter, or static-check command is configured.
-- Packaging: Windows batch scripts drive PyInstaller; scripts prefer an active venv/Conda env, otherwise reuse/create `py_build/.build_env`.
-- Serena/Pyright resolves `.venv` through `pyrightconfig.json`. On this workstation `.venv` is a gitignored junction to `D:\miniconda3\envs\Python3.13`; its interpreter is `.venv\python.exe` (Conda layout, not `.venv\Scripts\python.exe`).
+- Python desktop application targeting 64-bit Windows
+- Supported source runtime is Python 3.12 or 3.13 while the startup guard accepts Python 3.10 or newer
+- GUI dependencies are pinned to PyQt6 6.8.1 and PyQt6-Qt6 6.8.1 to avoid the Conda ICU entry-point conflict observed with 6.10 and 6.11
+- Vision and capture use opencv-python-headless 4.8 or newer and NumPy 1.24 or newer
+- Text rendering uses Pillow 10 or newer
+- ZWO support uses bundled `ASICamera2.dll` through `ctypes`; USB/UVC uses OpenCV `VideoCapture`
+- PyInstaller batch scripts use the dedicated ignored `py_build/.build_env` by default
+- Serena uses Pyright through the Python LSP
+- Shared Pyright settings live in tracked `pyrightconfig.base.json`
+- Local environment selection lives in ignored `.serena/python-env.local.json` and generates ignored `pyrightconfig.json`
+- Serena activation runs `.serena/select_python_env.ps1` before the LSP starts
+- The optional `.venv` junction is only a runtime convenience and is not part of Serena import resolution
