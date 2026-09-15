@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QSplitter,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -354,8 +355,14 @@ class MainWindow(QMainWindow):
         root = QWidget()
         self.setCentralWidget(root)
         main_layout = QHBoxLayout(root)
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+        main_layout.setSpacing(0)
+
+        # 分隔条允许用户按当前任务自由分配视频和参数区域宽度
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setHandleWidth(5)
+        main_layout.addWidget(self.main_splitter)
 
         # 左侧视频画面鼠标拖动会更新参考中心
         # 放大后使用右侧和下方滑条移动当前裁剪视野
@@ -390,18 +397,22 @@ class MainWindow(QMainWindow):
         corner = QWidget()
         corner.setFixedSize(22, 22)
         video_grid.addWidget(corner, 1, 1)
-        main_layout.addWidget(video_area, stretch=1)
+        self.main_splitter.addWidget(video_area)
 
         # 右侧参数较多时使用滚动区
         # 参数栏内的滚轮只滚动页面并避免意外修改控件数值
         self.control_scroll = QScrollArea()
         self.control_scroll.setWidgetResizable(True)
-        self.control_scroll.setFixedWidth(380)
+        self.control_scroll.setMinimumWidth(300)
+        self.control_scroll.setMaximumWidth(420)
         self.control_panel = QWidget()
         self.panel_layout = QVBoxLayout(self.control_panel)
         self.panel_layout.setContentsMargins(8, 8, 8, 8)
         self.control_scroll.setWidget(self.control_panel)
-        main_layout.addWidget(self.control_scroll)
+        self.main_splitter.addWidget(self.control_scroll)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
+        self.main_splitter.setSizes([1120, 330])
 
         self._build_control_group()
         self._build_camera_group()
@@ -420,9 +431,41 @@ class MainWindow(QMainWindow):
         )
         self.vision_group.raise_()
 
+        # 一键收起右侧面板便于将窗口宽度全部用于相机画面
+        self.btn_toggle_controls = QPushButton()
+        self.btn_toggle_controls.setObjectName("toggleControlsButton")
+        self.btn_toggle_controls.setFixedHeight(28)
+        self.btn_toggle_controls.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle_controls.setStyleSheet(
+            "QPushButton#toggleControlsButton { color: white; background: rgba(4,14,25,105); "
+            "border: 1px solid rgba(220,238,255,145); border-radius: 6px; padding: 3px 9px; font-weight: 600 } "
+            "QPushButton#toggleControlsButton:hover { background: rgba(17,92,138,175); border-color: #8fddff }"
+        )
+        self.btn_toggle_controls.clicked.connect(self._toggle_control_panel)
+        video_grid.addWidget(
+            self.btn_toggle_controls,
+            0,
+            0,
+            alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
+        )
+        self.btn_toggle_controls.raise_()
+
         # 所有右侧子控件创建完成后统一安装滚轮过滤器
         self._install_control_panel_wheel_filter()
-        self.resize(1380, 820)
+        self.resize(1480, 860)
+
+    def _toggle_control_panel(self) -> None:
+        """切换右侧控制面板并自动扩展视频区域"""
+        show_controls = self.control_scroll.isHidden()
+        self.control_scroll.setVisible(show_controls)
+        if show_controls:
+            total_width = max(1, self.main_splitter.width())
+            self.main_splitter.setSizes([max(1, total_width - 330), 330])
+        else:
+            self.main_splitter.setSizes([max(1, self.main_splitter.width()), 0])
+        self.btn_toggle_controls.setText(
+            self.i18n.t("hide_controls") if show_controls else self.i18n.t("show_controls")
+        )
 
     def _build_control_group(self) -> None:
         """构建启动、停止、重置和环境检测操作区"""
@@ -744,14 +787,14 @@ class MainWindow(QMainWindow):
         self.vision_group = QGroupBox()
         self.vision_group.setObjectName("visionOverlay")
         self.vision_group.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.vision_group.setMinimumWidth(360)
-        self.vision_group.setMaximumWidth(420)
+        self.vision_group.setMinimumWidth(330)
+        self.vision_group.setMaximumWidth(380)
         self.vision_group.setStyleSheet(
             """
             QGroupBox#visionOverlay {
                 color: #f7fbff;
-                background-color: rgba(8, 18, 31, 158);
-                border: 1px solid rgba(210, 232, 255, 185);
+                background-color: rgba(8, 18, 31, 88);
+                border: 1px solid rgba(210, 232, 255, 145);
                 border-radius: 10px;
                 margin-top: 11px;
                 font-weight: 600;
@@ -858,7 +901,7 @@ class MainWindow(QMainWindow):
         self.vision_help_label.setMaximumHeight(36)
         self.vision_help_label.setStyleSheet(
             "color: #e7f5ff; font-size: 10px; font-weight: 500; "
-            "background: rgba(1,8,16,118); border: 1px solid rgba(190,225,255,95); "
+            "background: rgba(1,8,16,72); border: 1px solid rgba(190,225,255,78); "
             "border-radius: 5px; padding: 4px"
         )
         layout.addWidget(self.vision_help_label, len(rows), 0, 1, 2)
@@ -1189,6 +1232,9 @@ class MainWindow(QMainWindow):
         self.secondary_sensitivity_label.setText(t("vision_secondary_sensitivity_compact"))
         self.vision_help_label.setText(t("vision_help_compact"))
         self.vision_help_label.setToolTip(t("vision_help"))
+        controls_visible = not self.control_scroll.isHidden()
+        self.btn_toggle_controls.setText(t("hide_controls") if controls_visible else t("show_controls"))
+        self.btn_toggle_controls.setToolTip(t("toggle_controls_hint"))
 
         self.status_group.setTitle(t("status"))
         self.btn_save.setText(t("save"))
