@@ -67,11 +67,24 @@ def list_camera_devices(camera_type: str, current_id: int = 0, max_usb_index: in
         devices: list[tuple[int, str]] = []
         # 限制探测范围以免部分 Windows 设备扫描过慢
         for idx in range(max_usb_index + 1):
-            cap = cv2.VideoCapture(idx)
-            ok = cap.isOpened()
-            cap.release()
-            if ok:
-                devices.append((idx, f"{idx} - USB / DirectShow camera"))
+            # 与 USBCamera 使用相同后端顺序，避免默认后端遗漏 UVC 设备。
+            for backend in USBCamera.capture_backends():
+                cap = None
+                ok = False
+                try:
+                    cap = cv2.VideoCapture()
+                    ok = bool(cap.open(idx, backend) and cap.isOpened())
+                except Exception:
+                    pass
+                finally:
+                    if cap is not None:
+                        try:
+                            cap.release()
+                        except Exception:
+                            pass
+                if ok:
+                    devices.append((idx, f"{idx} - USB / UVC camera"))
+                    break
         if not devices:
             # 保留当前编号以支持无法被枚举但可以手动打开的设备
             devices.append((int(current_id), f"{int(current_id)} - USB camera (manual)"))
