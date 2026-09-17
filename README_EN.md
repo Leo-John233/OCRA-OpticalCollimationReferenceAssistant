@@ -276,6 +276,10 @@ By default, the scripts select the build environment in this order:
 
 The dedicated environment prevents unused components such as MKL from a full Conda environment from entering the release. Custom hooks also exclude the unused FFmpeg video-file codec bundle and Pillow image plug-ins without affecting USB cameras, ASI cameras, screenshots, or interface rendering.
 
+When the base interpreter comes from Conda, the shared `py_build/build_runtime.py` entry point registers that interpreter's `Library/bin` and `DLLs` directories. PyInstaller recursively collects libraries actually referenced by the application, including `ffi-8.dll` required by `_ctypes.pyd`, instead of copying the whole Conda environment.
+
+After building, both scripts validate the ordinary PE import tables of all DLLs and Python native extensions, including transitive dependencies. Missing non-system DLLs cause a failed exit status before the success message. The single-file check reads the EXE archive directly and cannot borrow libraries from the developer's PATH.
+
 If dependencies are missing, the scripts install the project requirements and PyInstaller automatically. Without an existing virtual environment, only a system installation of 64-bit Python 3.10 or newer is required. The first dependency installation requires access to a Python package index.
 
 ### One-Click Build
@@ -306,7 +310,7 @@ Build the single-file distribution:
 .\py_build\build_single_exe.bat
 ```
 
-Run the scripts from a terminal in the project directory to retain the complete build log. They validate the Python version, 64-bit architecture, build dependencies, and required files, then invoke `python -m PyInstaller` through the selected interpreter.
+Run the scripts from a terminal in the project directory to retain the complete build log. They validate the Python version, 64-bit architecture, build dependencies, and required files, then run the shared build entry point with the selected interpreter to invoke PyInstaller.
 
 The build outputs are located at:
 
@@ -322,6 +326,19 @@ py_build\dist\OCRA\
 ```
 
 For the single-file distribution, provide `py_build/dist_single/config` with `OCRA_Single.exe` to retain the project's default configuration. Do not copy only `OCRA.exe` from the folder distribution, because PyQt6, OpenCV, the Python runtime, and camera DLLs are stored in the same application directory.
+
+### Cross-Machine Release Checks
+
+Rebuild before replacing release assets. Editing the scripts does not repair an existing EXE. Target computers do not need Python or Conda installed.
+
+To recheck existing outputs from the project directory:
+
+```powershell
+.\py_build\.build_env\Scripts\python.exe .\py_build\build_runtime.py verify .\py_build\dist\OCRA
+.\py_build\.build_env\Scripts\python.exe .\py_build\build_runtime.py verify .\py_build\dist_single\OCRA_Single.exe
+```
+
+The automated check validates ordinary imported file dependencies only. It does not replace compatibility tests for the target Windows version, CPU, delay-loaded components, or real camera drivers. Before releasing, launch both variants and test camera functionality on a clean Windows 10/11 x64 system without Python or Conda installed.
 
 ---
 

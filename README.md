@@ -276,6 +276,10 @@ Serena 使用独立的本机环境选择，不再依赖项目根目录的 `.venv
 
 专用轻量环境可避免把完整 Conda 环境中的 MKL 等未使用组件打进发布包，自定义打包钩子还会排除本项目未使用的视频文件 FFmpeg 编解码附件和 Pillow 图片插件，不影响 USB 相机、ASI 相机、截图及界面绘制
 
+如果基础解释器来自 Conda，脚本会通过共用入口 `py_build/build_runtime.py` 注册该解释器的 `Library/bin` 和 `DLLs` 目录，让 PyInstaller 递归收集实际引用的底层运行库，包括 `_ctypes.pyd` 依赖的 `ffi-8.dll`，而不是复制整个 Conda 环境
+
+两种包体完成构建后都会检查所有 DLL 和 Python 原生扩展的普通导入表及传递依赖，发现缺失的非系统 DLL 时以失败状态退出，不会继续提示打包成功，单文件版直接检查 EXE 内部归档，不能借用开发机 PATH 中的文件通过检查
+
 如果依赖缺失，脚本会自动安装 `requirements.txt` 和 PyInstaller 中的构建依赖，没有虚拟环境时只需要系统中已安装 64 位 Python 3.10 或更高版本，首次安装依赖需要能够访问 Python 软件包源
 
 ### 一键打包
@@ -306,7 +310,7 @@ $env:OCRA_USE_ACTIVE_ENV = "1"
 .\py_build\build_single_exe.bat
 ```
 
-建议在项目目录的终端中运行脚本，以便查看完整构建日志，脚本会检查 Python 版本、64 位架构、构建依赖和必要文件，并通过当前选定解释器的 `python -m PyInstaller` 执行打包
+建议在项目目录的终端中运行脚本，以便查看完整构建日志，脚本会检查 Python 版本、64 位架构、构建依赖和必要文件，并通过当前选定解释器运行共用构建入口来调用 PyInstaller
 
 构建结果分别位于：
 
@@ -322,6 +326,19 @@ py_build\dist\OCRA\
 ```
 
 发布单文件版时，建议把 `py_build/dist_single/config` 与 `OCRA_Single.exe` 一起提供，以保留项目的默认配置目录版不能只复制 `OCRA.exe`，因为 PyQt6、OpenCV、Python Runtime 和相机 DLL 等运行文件位于同一程序目录中
+
+### 跨电脑发布检查
+
+重新构建后再替换发布附件，旧 EXE 不会因修改脚本而自动补齐依赖，目标电脑无需安装 Python 或 Conda
+
+需要单独复查已生成的包体时，可在项目目录运行：
+
+```powershell
+.\py_build\.build_env\Scripts\python.exe .\py_build\build_runtime.py verify .\py_build\dist\OCRA
+.\py_build\.build_env\Scripts\python.exe .\py_build\build_runtime.py verify .\py_build\dist_single\OCRA_Single.exe
+```
+
+自动检查只验证普通导入表的文件依赖，不替代目标 Windows 版本、CPU、延迟加载组件和真实相机驱动的兼容性测试，发布前仍需在没有 Python 和 Conda 的干净 Windows 10/11 x64 环境中启动两个版本并测试相机功能
 
 ---
 
