@@ -44,7 +44,7 @@ class ManualFocusControlTests(unittest.TestCase):
         self.assertIsInstance(self.window.focus_slider, DampedSlider)
         self.assertEqual(self.window.focus_slider.orientation(), Qt.Orientation.Horizontal)
         for control in (self.window.focus_slider, self.window.focus_spin):
-            self.assertEqual((control.minimum(), control.maximum(), control.value()), (-512, 512, -412))
+            self.assertEqual((control.minimum(), control.maximum(), control.value()), (-512, 512, 412))
         self.assertEqual(self.window.focus_spin.width(), self.window.h_offset_value.width())
         self.assertEqual(self.window.focus_label.text(), "手动焦点")
 
@@ -52,16 +52,16 @@ class ManualFocusControlTests(unittest.TestCase):
         """拖动滑条后同步数值输入框和业务参数"""
         self.window.focus_slider.setValue(420)
         self.assertEqual(self.window.focus_spin.value(), 420)
-        self.assertEqual(self.window.config.camera_focus, 931)
+        self.assertEqual(self.window.config.camera_focus, 92)
 
     def test_input_updates_slider_and_config(self) -> None:
         """输入整数时同步滑条并保持取值边界"""
         self.window.focus_spin.setValue(1023)
         self.assertEqual(self.window.focus_slider.value(), 512)
-        self.assertEqual(self.window.config.camera_focus, 1023)
+        self.assertEqual(self.window.config.camera_focus, 0)
         self.window.focus_spin.setValue(-1024)
         self.assertEqual(self.window.focus_slider.value(), -512)
-        self.assertEqual(self.window.config.camera_focus, 0)
+        self.assertEqual(self.window.config.camera_focus, 1023)
 
     def test_autofocus_disables_both_controls(self) -> None:
         """自动对焦切换时两个手动控件同时禁用或恢复"""
@@ -72,15 +72,15 @@ class ManualFocusControlTests(unittest.TestCase):
         self.window.auto_focus_check.setChecked(False)
         self.assertTrue(self.window.focus_slider.isEnabled())
         self.assertTrue(self.window.focus_spin.isEnabled())
-        self.assertEqual(self.window.focus_slider.value(), -412)
+        self.assertEqual(self.window.focus_slider.value(), 412)
 
     def test_reload_updates_both_controls_and_autofocus(self) -> None:
         """重载配置不会遗留旧的滑条值或禁用状态"""
         config = AppConfig(camera_type="usb", camera_auto_focus=True, camera_focus=600)
         with patch.object(self.window.config_manager, "load", return_value=config):
             self.window.load_parameters()
-        self.assertEqual(self.window.focus_spin.value(), 88)
-        self.assertEqual(self.window.focus_slider.value(), 88)
+        self.assertEqual(self.window.focus_spin.value(), -88)
+        self.assertEqual(self.window.focus_slider.value(), -88)
         self.assertEqual(self.window.config.camera_focus, 600)
         self.assertFalse(self.window.focus_slider.isEnabled())
         self.assertFalse(self.window.focus_spin.isEnabled())
@@ -93,7 +93,7 @@ class ManualFocusControlTests(unittest.TestCase):
         self.window.focus_slider.setValue(350)
         self.assertTrue(self.window._camera_param_timer.isActive())
         self.window._apply_camera_params_debounced()
-        thread.request_camera_controls.assert_called_once_with(50.0, 100, 400, False, False, 861)
+        thread.request_camera_controls.assert_called_once_with(50.0, 100, 400, False, False, 162)
         thread.stop.assert_not_called()
 
     def test_save_parameters_uses_slider_value(self) -> None:
@@ -101,7 +101,7 @@ class ManualFocusControlTests(unittest.TestCase):
         self.window.focus_slider.setValue(250)
         self.window.save_parameters()
         self.window.config_manager.save.assert_called_once_with(self.window.config)
-        self.assertEqual(self.window.config.camera_focus, 762)
+        self.assertEqual(self.window.config.camera_focus, 262)
 
     def test_default_focus_is_zero_at_exact_center(self) -> None:
         """默认参数的零刻度位于对称滑条正中间"""
@@ -115,11 +115,11 @@ class ManualFocusControlTests(unittest.TestCase):
     def test_negative_and_positive_values_move_both_directions(self) -> None:
         """负值不能像旧后端那样被截成零，两个方向必须产生不同焦点"""
         self.window.focus_slider.setValue(-100)
-        self.assertEqual(self.window.config.camera_focus, 412)
+        self.assertEqual(self.window.config.camera_focus, 612)
         self.window.focus_slider.setValue(0)
         self.assertEqual(self.window.config.camera_focus, 512)
         self.window.focus_slider.setValue(100)
-        self.assertEqual(self.window.config.camera_focus, 612)
+        self.assertEqual(self.window.config.camera_focus, 412)
 
     def test_absolute_config_round_trip_preserves_every_value(self) -> None:
         """全部旧绝对焦点都能无损往返，重载和保存不会改变实际位置"""
@@ -130,20 +130,23 @@ class ManualFocusControlTests(unittest.TestCase):
     def test_offset_mapping_is_bounded_and_monotonic(self) -> None:
         """两个方向连续变化，所有发送到驱动的值保持非负且不超范围"""
         values = [focus_from_offset(offset) for offset in range(-512, 513)]
-        self.assertEqual(values[0], 0)
+        self.assertEqual(values[0], 1023)
         self.assertEqual(values[512], 512)
-        self.assertEqual(values[-1], 1023)
-        self.assertEqual(values, sorted(values))
-        self.assertEqual(focus_from_offset(-9999), 0)
-        self.assertEqual(focus_from_offset(9999), 1023)
+        self.assertEqual(values[-1], 0)
+        self.assertEqual(values, sorted(values, reverse=True))
+        self.assertEqual(focus_from_offset(-9999), 1023)
+        self.assertEqual(focus_from_offset(9999), 0)
 
-    def test_far_near_labels_follow_language(self) -> None:
-        """远近提示与中文英文界面一起切换"""
-        self.assertEqual(self.window.focus_far_label.text(), "远（−）")
-        self.assertEqual(self.window.focus_near_label.text(), "近（＋）")
+    def test_endpoint_symbols_remain_the_same_in_both_languages(self) -> None:
+        """底部只显示负号和正号，方向含义放在悬停提示中"""
+        self.assertEqual(self.window.focus_minus_label.text(), "−")
+        self.assertEqual(self.window.focus_plus_label.text(), "＋")
+        self.assertEqual(self.window.focus_zero_label.text(), "0")
+        self.assertIn("左侧负值对近，右侧正值对远", self.window.focus_row.toolTip())
         self.window.change_language("en")
-        self.assertEqual(self.window.focus_far_label.text(), "Far (−)")
-        self.assertEqual(self.window.focus_near_label.text(), "Near (+)")
+        self.assertEqual(self.window.focus_minus_label.text(), "−")
+        self.assertEqual(self.window.focus_plus_label.text(), "＋")
+        self.assertIn("Left negative values adjust toward near", self.window.focus_row.toolTip())
 
     def test_apply_params_passes_absolute_focus_to_camera(self) -> None:
         """立即应用参数也必须转换，不向后端传负数"""
@@ -152,7 +155,7 @@ class ManualFocusControlTests(unittest.TestCase):
         self.window.thread = thread
         self.window.focus_spin.setValue(-200)
         self.window.apply_camera_params()
-        thread.request_camera_controls.assert_called_once_with(50.0, 100, 400, False, False, 312)
+        thread.request_camera_controls.assert_called_once_with(50.0, 100, 400, False, False, 712)
 
 
 if __name__ == "__main__":
