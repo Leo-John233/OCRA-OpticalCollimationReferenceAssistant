@@ -1,0 +1,2 @@
+# 批处理统一使用 Windows 换行，避免中文命令被 CMD 截断
+*.bat text eol=crlf

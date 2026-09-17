@@ -1,6 +1,8 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 setlocal EnableExtensions
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 
 rem 目录版通用构建脚本
 rem 默认使用本地轻量构建环境以避免打入完整 Conda 科学计算运行库
@@ -155,7 +157,8 @@ if not exist "%QT_PLUGIN_DIR%\styles\qmodernwindowsstyle.dll" (
 
 rem 执行目录版打包
 pushd "%PROJECT_ROOT%"
-"%PYTHON_EXE%" -m PyInstaller ^
+rem 共用入口让 PyInstaller 能找到基础 Conda 环境中的传递依赖
+"%PYTHON_EXE%" "%PROJECT_ROOT%\py_build\build_runtime.py" build ^
     --name "OCRA" ^
     --onedir ^
     --windowed ^
@@ -183,6 +186,13 @@ if not "%BUILD_EXIT%"=="0" (
 )
 if not exist "%DIST_APP%\OCRA.exe" (
     echo [错误] 打包结束但未生成 OCRA.exe
+    exit /b 1
+)
+
+rem 校验所有原生文件，发现缺失 DLL 时禁止显示打包成功
+"%PYTHON_EXE%" "%PROJECT_ROOT%\py_build\build_runtime.py" verify "%DIST_APP%"
+if errorlevel 1 (
+    echo [错误] 目录版依赖检查失败 请勿发布当前包体
     exit /b 1
 )
 
