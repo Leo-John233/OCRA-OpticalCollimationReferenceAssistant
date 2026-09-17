@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
 
 from core.app_state import AppConfig, CircleConfig
 from core.config_manager import ConfigManager
+from core.focus_control import FOCUS_OFFSET_LIMIT, focus_from_offset, focus_to_offset
 from core.environment_check import EnvironmentReport, run_environment_check
 from core.i18n import I18nManager
 from core.vision_engine import VisionEngine
@@ -659,12 +660,34 @@ class MainWindow(QMainWindow):
         self.auto_focus_check = QCheckBox()
         self.auto_focus_check.setChecked(bool(self.config.camera_auto_focus))
         self.auto_focus_check.stateChanged.connect(lambda _state: self._on_camera_focus_changed())
-        # 复用位置控制的滑条和输入框，焦点仍使用驱动要求的整数值
+        # 界面使用以零为中心的远近刻度，保存和下发时转换为绝对焦点
         self.focus_slider, self.focus_spin = self._make_editable_slider(
-            0, 1023, self.config.camera_focus, lambda _v: self._on_camera_focus_changed()
+            -FOCUS_OFFSET_LIMIT, FOCUS_OFFSET_LIMIT, focus_to_offset(self.config.camera_focus),
+            lambda _v: self._on_camera_focus_changed()
         )
         self.focus_spin.setFixedWidth(96)
-        self.focus_row = self._slider_row(self.focus_slider, self.focus_spin)
+        self.focus_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.focus_slider.setTickInterval(FOCUS_OFFSET_LIMIT)
+        self.focus_track = QWidget()
+        track_layout = QVBoxLayout(self.focus_track)
+        track_layout.setContentsMargins(0, 0, 0, 0)
+        track_layout.setSpacing(0)
+        track_layout.addWidget(self.focus_slider)
+        scale_layout = QHBoxLayout()
+        self.focus_far_label = QLabel()
+        self.focus_zero_label = QLabel("0")
+        self.focus_near_label = QLabel()
+        scale_layout.addWidget(self.focus_far_label)
+        scale_layout.addStretch()
+        scale_layout.addWidget(self.focus_zero_label)
+        scale_layout.addStretch()
+        scale_layout.addWidget(self.focus_near_label)
+        track_layout.addLayout(scale_layout)
+        self.focus_row = QWidget()
+        focus_row_layout = QHBoxLayout(self.focus_row)
+        focus_row_layout.setContentsMargins(0, 0, 0, 0)
+        focus_row_layout.addWidget(self.focus_track, 1)
+        focus_row_layout.addWidget(self.focus_spin)
         focus_form.addRow(QLabel(), self.auto_focus_check)
         focus_form.addRow(QLabel(), self.focus_row)
         self.auto_focus_label = focus_form.labelForField(self.auto_focus_check)
@@ -1234,6 +1257,9 @@ class MainWindow(QMainWindow):
         self.auto_exposure_label.setText(t("auto_exposure"))
         self.auto_focus_label.setText(t("auto_focus"))
         self.focus_label.setText(t("manual_focus"))
+        self.focus_far_label.setText(t("focus_far"))
+        self.focus_near_label.setText(t("focus_near"))
+        self.focus_row.setToolTip(t("focus_offset_tip"))
         self.btn_refresh_cameras.setText(t("refresh_cameras"))
         self.btn_apply_camera.setText(t("apply_camera"))
         self.btn_apply_params.setText(t("apply_params"))
@@ -1380,7 +1406,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "auto_focus_check"):
             self.config.camera_auto_focus = self.auto_focus_check.isChecked()
         if hasattr(self, "focus_spin"):
-            self.config.camera_focus = int(self.focus_spin.value())
+            self.config.camera_focus = focus_from_offset(self.focus_spin.value())
         # 只有相机线程运行时才需要在线写入；没启动时保存到 config，启动时会自动使用
         if self.thread and self.thread.isRunning():
             self._camera_param_timer.start()
@@ -1393,7 +1419,7 @@ class MainWindow(QMainWindow):
         if self._updating_ui:
             return
         self.config.camera_auto_focus = self.auto_focus_check.isChecked()
-        self.config.camera_focus = int(self.focus_spin.value())
+        self.config.camera_focus = focus_from_offset(self.focus_spin.value())
         # 自动对焦时禁用整行，避免滑条仍能修改手动焦点
         self.focus_row.setEnabled(not self.config.camera_auto_focus)
         if self.thread and self.thread.isRunning():
@@ -1602,7 +1628,7 @@ class MainWindow(QMainWindow):
         self.config.camera_gain = int(self.gain_spin.value())
         self.config.camera_auto_exposure = self.auto_exposure_check.isChecked()
         self.config.camera_auto_focus = self.auto_focus_check.isChecked()
-        self.config.camera_focus = int(self.focus_spin.value())
+        self.config.camera_focus = focus_from_offset(self.focus_spin.value())
         self.config.ui_fps_limit = int(self.ui_fps_spin.value())
         if self.thread and self.thread.isRunning():
             self.thread.set_fps_limit(self.config.ui_fps_limit)
@@ -1627,7 +1653,7 @@ class MainWindow(QMainWindow):
         self.config.camera_gain = int(self.gain_spin.value())
         self.config.camera_auto_exposure = self.auto_exposure_check.isChecked()
         self.config.camera_auto_focus = self.auto_focus_check.isChecked()
-        self.config.camera_focus = int(self.focus_spin.value())
+        self.config.camera_focus = focus_from_offset(self.focus_spin.value())
         self.config.ui_fps_limit = int(self.ui_fps_spin.value())
 
         if self.thread and self.thread.isRunning():
@@ -1688,7 +1714,7 @@ class MainWindow(QMainWindow):
         self.gain_spin.setValue(int(self.config.camera_gain))
         self.auto_exposure_check.setChecked(bool(self.config.camera_auto_exposure))
         self.auto_focus_check.setChecked(bool(self.config.camera_auto_focus))
-        self.focus_spin.setValue(int(self.config.camera_focus))
+        self.focus_spin.setValue(focus_to_offset(self.config.camera_focus))
         self.focus_row.setEnabled(not bool(self.config.camera_auto_focus))
         self.h_offset_slider.setValue(int(round(float(self.config.horizontal_offset))))
         self.v_offset_slider.setValue(int(round(float(self.config.vertical_offset))))
@@ -2673,7 +2699,7 @@ class MainWindow(QMainWindow):
         self.config.camera_gain = int(self.gain_spin.value())
         self.config.camera_auto_exposure = self.auto_exposure_check.isChecked()
         self.config.camera_auto_focus = self.auto_focus_check.isChecked()
-        self.config.camera_focus = int(self.focus_spin.value())
+        self.config.camera_focus = focus_from_offset(self.focus_spin.value())
         self.config.ui_fps_limit = int(self.ui_fps_spin.value())
         self.config.view_pan_x = int(self.view_pan_x_slider.value())
         self.config.view_pan_y = int(self.view_pan_y_slider.value())

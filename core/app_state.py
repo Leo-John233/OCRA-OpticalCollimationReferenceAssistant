@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Tuple
 
+from .focus_control import FOCUS_MIDPOINT
+
 
 @dataclass
 class CircleConfig:
@@ -60,7 +62,8 @@ class AppConfig:
     # 部分 UVC 和 DirectShow 摄像头支持电子对焦
     # 物理镜头仍需手动旋转，此参数仅对应驱动暴露的 Focus 控制项
     camera_auto_focus: bool = True
-    camera_focus: int = 0
+    # 保存驱动的绝对焦点，默认中点在界面显示为零
+    camera_focus: int = FOCUS_MIDPOINT
     zwo_dll_path: str = ""
 
     # 外圈参考中心等于图像中心加水平和垂直偏移
