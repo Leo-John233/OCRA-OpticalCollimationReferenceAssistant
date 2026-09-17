@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel, QSlider
 
 from core.app_state import AppConfig
 from core.focus_control import focus_from_offset, focus_to_offset
@@ -137,15 +137,15 @@ class ManualFocusControlTests(unittest.TestCase):
         self.assertEqual(focus_from_offset(-9999), 1023)
         self.assertEqual(focus_from_offset(9999), 0)
 
-    def test_endpoint_symbols_remain_the_same_in_both_languages(self) -> None:
-        """底部只显示负号和正号，方向含义放在悬停提示中"""
-        self.assertEqual(self.window.focus_minus_label.text(), "−")
-        self.assertEqual(self.window.focus_plus_label.text(), "＋")
-        self.assertEqual(self.window.focus_zero_label.text(), "0")
+    def test_focus_row_has_no_bottom_ticks_or_labels(self) -> None:
+        """只保留滑条和输入框，切换语言也不恢复底部刻度与符号"""
+        self.assertEqual(self.window.focus_slider.tickPosition(), QSlider.TickPosition.NoTicks)
+        self.assertEqual(self.window.focus_row.layout().count(), 2)
+        self.assertEqual(self.window.focus_row.findChildren(QLabel), [])
         self.assertIn("左侧负值对近，右侧正值对远", self.window.focus_row.toolTip())
         self.window.change_language("en")
-        self.assertEqual(self.window.focus_minus_label.text(), "−")
-        self.assertEqual(self.window.focus_plus_label.text(), "＋")
+        self.assertEqual(self.window.focus_slider.tickPosition(), QSlider.TickPosition.NoTicks)
+        self.assertEqual(self.window.focus_row.findChildren(QLabel), [])
         self.assertIn("Left negative values adjust toward near", self.window.focus_row.toolTip())
 
     def test_apply_params_passes_absolute_focus_to_camera(self) -> None:
