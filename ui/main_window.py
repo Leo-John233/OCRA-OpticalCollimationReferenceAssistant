@@ -659,15 +659,16 @@ class MainWindow(QMainWindow):
         self.auto_focus_check = QCheckBox()
         self.auto_focus_check.setChecked(bool(self.config.camera_auto_focus))
         self.auto_focus_check.stateChanged.connect(lambda _state: self._on_camera_focus_changed())
-        self.focus_spin = QSpinBox()
-        self.focus_spin.setRange(0, 1023)
-        self.focus_spin.setSingleStep(1)
-        self.focus_spin.setValue(int(self.config.camera_focus))
-        self.focus_spin.valueChanged.connect(lambda _v: self._on_camera_focus_changed())
+        # 复用位置控制的滑条和输入框，焦点仍使用驱动要求的整数值
+        self.focus_slider, self.focus_spin = self._make_editable_slider(
+            0, 1023, self.config.camera_focus, lambda _v: self._on_camera_focus_changed()
+        )
+        self.focus_spin.setFixedWidth(96)
+        self.focus_row = self._slider_row(self.focus_slider, self.focus_spin)
         focus_form.addRow(QLabel(), self.auto_focus_check)
-        focus_form.addRow(QLabel(), self.focus_spin)
+        focus_form.addRow(QLabel(), self.focus_row)
         self.auto_focus_label = focus_form.labelForField(self.auto_focus_check)
-        self.focus_label = focus_form.labelForField(self.focus_spin)
+        self.focus_label = focus_form.labelForField(self.focus_row)
         root.addWidget(self.usb_focus_group)
 
         # ---------------- 操作按钮 ----------------
@@ -1393,7 +1394,8 @@ class MainWindow(QMainWindow):
             return
         self.config.camera_auto_focus = self.auto_focus_check.isChecked()
         self.config.camera_focus = int(self.focus_spin.value())
-        self.focus_spin.setEnabled(not self.config.camera_auto_focus)
+        # 自动对焦时禁用整行，避免滑条仍能修改手动焦点
+        self.focus_row.setEnabled(not self.config.camera_auto_focus)
         if self.thread and self.thread.isRunning():
             self._camera_param_timer.start()
 
@@ -1455,7 +1457,7 @@ class MainWindow(QMainWindow):
             self.iso_spin.setToolTip(self.i18n.t("usb_brightness_tip"))
             self.gain_label.setText(self.i18n.t("gain"))
             self.camera_param_group.setToolTip(self.i18n.t("usb_param_tip"))
-            self.focus_spin.setEnabled(not self.auto_focus_check.isChecked())
+            self.focus_row.setEnabled(not self.auto_focus_check.isChecked())
         elif camera_type == "qhy":
             self.exposure_label.setText(self.i18n.t("exposure"))
             self.iso_label.setText(self.i18n.t("offset_brightness"))
@@ -1687,7 +1689,7 @@ class MainWindow(QMainWindow):
         self.auto_exposure_check.setChecked(bool(self.config.camera_auto_exposure))
         self.auto_focus_check.setChecked(bool(self.config.camera_auto_focus))
         self.focus_spin.setValue(int(self.config.camera_focus))
-        self.focus_spin.setEnabled(not bool(self.config.camera_auto_focus))
+        self.focus_row.setEnabled(not bool(self.config.camera_auto_focus))
         self.h_offset_slider.setValue(int(round(float(self.config.horizontal_offset))))
         self.v_offset_slider.setValue(int(round(float(self.config.vertical_offset))))
         self.h_offset_value.setValue(float(self.config.horizontal_offset))
