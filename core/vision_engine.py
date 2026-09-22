@@ -150,6 +150,64 @@ class VisionEngine:
                 draw.text((local_x, local_y), text, fill=(r, g, b), font=font)
         hud_region[:] = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
 
+    @staticmethod
+    def _draw_text_grid(frame: np.ndarray, rows: list[list[Tuple[str, str, bool]]],
+                        colors: Dict[str, Tuple[int, int, int]], scale: float) -> None:
+        """在相机帧左上角绘制无边框的三列状态文字"""
+        if not rows:
+            return
+        frame_h, frame_w = frame.shape[:2]
+        margin_x = VisionEngine._scaled(18, scale, 12)
+        margin_y = VisionEngine._scaled(12, scale, 8)
+        gutter = VisionEngine._scaled(26, scale, 18)
+        base_size = VisionEngine._scaled(16, scale, 12)
+
+        if Image is None or ImageDraw is None or ImageFont is None:
+            # 缺少中文绘制依赖时仍按列位保留英文回退内容
+            for row_index, row in enumerate(rows):
+                x = margin_x
+                for text, tone, _bold in row:
+                    color = colors[tone]
+                    cv2.putText(frame, text, (x, margin_y + 20 + row_index * 25),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+                    x += max(120, len(text) * 9) + gutter
+            return
+
+        probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+        # 先测量三列宽度并在窄画面上缩小字号以避免内容被裁断
+        for size in range(base_size, 9, -1):
+            fonts = {False: VisionEngine._get_font(size), True: VisionEngine._get_font(size, True)}
+            widths = [
+                max(probe.textbbox((0, 0), row[col][0], font=fonts[row[col][2]])[2]
+                    for row in rows if row[1][0] or row[2][0])
+                for col in range(3)
+            ]
+            footer_width = max(
+                (probe.textbbox((0, 0), row[0][0], font=fonts[row[0][2]])[2]
+                 for row in rows if not row[1][0] and not row[2][0]),
+                default=0,
+            )
+            total_width = max(sum(widths) + gutter * 2, footer_width) + 4
+            if total_width <= frame_w - margin_x * 2:
+                break
+
+        line_gap = max(size + 8, VisionEngine._scaled(24, scale, 18))
+        right = min(frame_w, margin_x + total_width)
+        bottom = min(frame_h, margin_y + line_gap * len(rows) + 4)
+        if right <= margin_x or bottom <= margin_y:
+            return
+        region = frame[margin_y:bottom, margin_x:right]
+        image = Image.fromarray(cv2.cvtColor(region, cv2.COLOR_BGR2RGB))
+        painter = ImageDraw.Draw(image)
+        column_x = [0, widths[0] + gutter, widths[0] + widths[1] + gutter * 2]
+        for row_index, row in enumerate(rows):
+            for col, (label, tone, bold) in enumerate(row):
+                b, g, r = colors[tone]
+                painter.text((column_x[col], row_index * line_gap), label,
+                             fill=(r, g, b), font=fonts[bold],
+                             stroke_width=1, stroke_fill=(0, 0, 0))
+        region[:] = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
+
     # ------------------------------------------------------------------
     # 几何覆盖层：画在原始相机坐标上，缩放/放大前执行
     # ------------------------------------------------------------------
@@ -474,26 +532,11 @@ class VisionEngine:
         return i18n.t(item.get("source_key", "source_waiting"))
 
     @staticmethod
-    def _compact_metric_line(config: AppConfig, i18n, item: dict) -> Tuple[str, str, float, float, float]:
-        """生成一行紧凑的目标偏移文本"""
-        name = VisionEngine._target_display_name(i18n, item)
-        xy = item.get("xy")
-        m = VisionEngine.measure(config, xy)
-        guide = VisionEngine.guide_text(config, i18n, xy)
-        px = i18n.t("hud_px")
-        text = (
-            f"{name}: dx {m['dx']:+.1f}{px}, "
-            f"dy {m['dy']:+.1f}{px}, "
-            f"dist {m['dist']:.1f}{px}"
-        )
-        return text, guide, m["dx"], m["dy"], m["dist"]
-
-    @staticmethod
-    def hud_rows(config: AppConfig, i18n,
+    def hud_grid(config: AppConfig, i18n,
                  detected_xy: Optional[Tuple[int, int]], score: float,
                  source_key: str, status_key: str,
-                 target_metrics: Optional[list[dict]] = None) -> Tuple[list[Tuple[str, str, bool]], list[dict], bool]:
-        """生成可供窗口文字层和相机帧共用的 HUD 内容"""
+                 target_metrics: Optional[list[dict]] = None) -> Tuple[list[list[Tuple[str, str, bool]]], list[dict], bool]:
+        """生成窗口文字层和相机帧共用的三列 HUD 数据"""
         targets = list(target_metrics or [])
         if not targets:
             targets = [{
@@ -508,11 +551,21 @@ class VisionEngine:
         measurements = [VisionEngine.measure(config, item.get("xy")) for item in targets]
         # 多目标必须全部进入容差才显示已对准
         all_aligned = bool(targets) and config.reference_locked and all(m["dist"] <= tol for m in measurements)
-        status_text = i18n.t("within_tolerance") if all_aligned else i18n.t(status_key)
         ref_text = i18n.t("hud_reference_locked") if config.reference_locked else i18n.t("hud_reference_unlocked")
-        rows: list[Tuple[str, str, bool]] = [
-            (f"{i18n.t('hud_reference')}: {ref_text}", "normal", True),
-        ]
+        if all_aligned:
+            status_text = i18n.t("within_tolerance")
+        elif status_key == "reference_set":
+            status_text = ref_text
+        elif status_key == "need_reference":
+            status_text = i18n.t("hud_need_reference")
+        elif status_key == "waiting":
+            status_text = i18n.t("hud_waiting")
+        else:
+            status_text = i18n.t(status_key)
+        status_cell = (f"{i18n.t('hud_status')}  {status_text}", "success" if all_aligned else "normal", False)
+        status_is_long = len(status_cell[0]) > 24
+        visible_status = ("", "normal", False) if status_is_long else status_cell
+        rows: list[list[Tuple[str, str, bool]]] = []
 
         if len(targets) == 1:
             item = targets[0]
@@ -522,52 +575,44 @@ class VisionEngine:
             guide = VisionEngine.guide_text(config, i18n, xy)
             confidence = i18n.t("confidence_high") if local_score >= 80 else (i18n.t("confidence_mid") if local_score >= 50 else i18n.t("confidence_low"))
             px = i18n.t("hud_px")
-            # 四行紧凑布局适配相机画面上方的留白区域
+            # 每列固定承担目标信息、测量值和状态提示
             rows = [
-                (
-                    f"{i18n.t('hud_reference')}: {ref_text}  ·  "
-                    f"{i18n.t('hud_source')}: {VisionEngine._target_display_name(i18n, item)}",
-                    "normal",
-                    True,
-                ),
-                (
-                    f"{i18n.t('hud_confidence')}: {confidence} ({local_score:.0f})  ·  "
-                    f"{i18n.t('hud_score')}: {local_score:.1f} / 100",
-                    "score",
-                    True,
-                ),
-                (
-                    f"{i18n.t('hud_dx')}: {m['dx']:+.1f}  ·  "
-                    f"{i18n.t('hud_dy')}: {m['dy']:+.1f}  ·  "
-                    f"{i18n.t('hud_dist')}: {m['dist']:.1f} {px}",
-                    "metric",
-                    True,
-                ),
-                (
-                    f"{i18n.t('hud_guide')}: {guide}  ·  "
-                    f"{i18n.t('hud_status')}: {status_text}",
-                    "success" if all_aligned else "alert",
-                    True,
-                ),
+                [
+                    (f"{i18n.t('hud_source')}  {VisionEngine._target_display_name(i18n, item)}", "normal", False),
+                    (f"{i18n.t('hud_reference')}  {ref_text}", "normal", False),
+                    (f"{i18n.t('hud_confidence')}  {confidence} ({local_score:.0f})", "score", False),
+                ],
+                [
+                    (f"{i18n.t('hud_dx')}  {m['dx']:+.1f}{px}", "metric", False),
+                    (f"{i18n.t('hud_dy')}  {m['dy']:+.1f}{px}", "metric", False),
+                    (f"{i18n.t('hud_dist')}  {m['dist']:.1f}{px}", "metric", True),
+                ],
+                [
+                    (f"{i18n.t('hud_score')}  {local_score:.1f}/100", "score", True),
+                    (f"{i18n.t('hud_guide')}  {guide}", "success" if all_aligned else "normal", False),
+                    visible_status,
+                ],
             ]
         else:
-            target_names = " + ".join(VisionEngine._target_display_name(i18n, item) for item in targets)
-            rows[0] = (
-                f"{i18n.t('hud_reference')}: {ref_text}  ·  {i18n.t('hud_source')}: {target_names}",
-                "normal",
-                True,
-            )
-            # 多目标各占一行并同时呈现偏差和调节方向
+            rows.append([
+                (f"{i18n.t('hud_source')}  {len(targets)}", "normal", False),
+                (f"{i18n.t('hud_reference')}  {ref_text}", "normal", False),
+                visible_status,
+            ])
+            # 多目标每行沿用相同列位显示评分、偏差和调节方向
             for item in targets:
-                metric_text, guide, _dx, _dy, dist = VisionEngine._compact_metric_line(config, i18n, item)
-                tone = "success" if dist <= tol and config.reference_locked else "metric"
-                rows.append((f"{metric_text}  ·  {i18n.t('hud_guide')}: {guide}", tone, True))
-
-            rows.append((
-                f"{i18n.t('hud_status')}: {status_text}",
-                "success" if all_aligned else "alert",
-                True,
-            ))
+                xy = item.get("xy")
+                m = VisionEngine.measure(config, xy)
+                local_score = float(item.get("score", score) or 0.0)
+                tone = "success" if m["dist"] <= tol and config.reference_locked else "metric"
+                rows.append([
+                    (f"{VisionEngine._target_display_name(i18n, item)}  {local_score:.0f}/100", "score", True),
+                    (f"X {m['dx']:+.1f}   Y {m['dy']:+.1f}", tone, False),
+                    (f"{i18n.t('hud_dist')} {m['dist']:.1f}{i18n.t('hud_px')}   {VisionEngine.guide_text(config, i18n, xy)}", tone, False),
+                ])
+        if status_is_long:
+            # 较长的状态提示跨列显示以免挤窄常用测量列
+            rows.append([status_cell, ("", "normal", False), ("", "normal", False)])
         return rows, targets, all_aligned
 
     @staticmethod
@@ -585,7 +630,7 @@ class VisionEngine:
         - 没有勾选持续吸附：保持原来的手动目标数据
         """
         tol = max(0.1, config.guide_tolerance)
-        rows, targets, _all_aligned = VisionEngine.hud_rows(
+        rows, targets, _all_aligned = VisionEngine.hud_grid(
             config,
             i18n,
             detected_xy,
@@ -596,27 +641,16 @@ class VisionEngine:
         )
 
         if draw_text:
-            scale = VisionEngine._hud_scale(frame)
-            # 多目标自动压缩字号以减少画面遮挡
-            multi = len(targets) > 1
-            normal_size = VisionEngine._scaled(19 if multi else 20, scale, 13)
-            score_size = VisionEngine._scaled(21 if multi else 22, scale, 14)
-            margin_x = VisionEngine._scaled(18, scale, 10)
-            margin_y = VisionEngine._scaled(12, scale, 8)
-            line_gap = VisionEngine._scaled(25 if multi else 27, scale, 18)
-            stroke = VisionEngine._scaled(2, scale, 1)
+            # 限制大画面字号并保持三列与普通窗口相同的阅读顺序
+            scale = min(1.18, VisionEngine._hud_scale(frame))
             colors = {
-                "normal": (255, 255, 255),
-                "score": (0, 220, 255),
-                "metric": (255, 255, 0),
-                "success": (0, 220, 0),
-                "alert": (0, 0, 255),
+                "normal": (230, 236, 241),
+                "score": (78, 194, 246),
+                "metric": (210, 217, 102),
+                "success": (148, 220, 118),
+                "alert": (132, 157, 232),
             }
-            lines = [
-                (text, colors[tone], score_size if tone == "score" else normal_size, bold)
-                for text, tone, bold in rows
-            ]
-            VisionEngine._draw_text_block(frame, lines, margin_x, margin_y, line_gap, stroke)
+            VisionEngine._draw_text_grid(frame, rows, colors, scale)
 
         # 单目标时保留 OCAL 风格的大方向箭头双目标可能出现方向冲突，
         # 此时只在 HUD 中分别给出中圈/内圈文本建议，避免大箭头误导用户

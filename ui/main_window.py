@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import copy
-import html
 import math
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
@@ -17,7 +16,7 @@ from typing import Callable, Dict, Optional, Tuple
 import cv2
 import numpy as np
 from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QColor, QImage, QPixmap
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -384,7 +383,6 @@ class MainWindow(QMainWindow):
         # 普通窗口使用独立透明文字层避免状态信息写入相机画面
         self.camera_hud_label = QLabel(self.video_label)
         self.camera_hud_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.camera_hud_label.setTextFormat(Qt.TextFormat.RichText)
         self.camera_hud_label.setStyleSheet("background: transparent; border: none")
         self.camera_hud_label.move(18, 14)
         self.camera_hud_label.show()
@@ -2810,7 +2808,8 @@ class MainWindow(QMainWindow):
             self.secondary_xy,
             self.active_target,
         )
-        draw_hud_on_frame = self._draw_hud_on_camera_frame()
+        overlay_grid = self._camera_hud_grid(hud_targets) if not self.control_sidebar.isHidden() else []
+        draw_hud_on_frame = self._draw_hud_on_camera_frame(output_size, len(overlay_grid))
         VisionEngine.draw_hud(display_frame, self.config, self.i18n, self.detected_xy,
                               self.last_score, self.last_source_key, self.last_status_key,
                               target_metrics=hud_targets, draw_text=draw_hud_on_frame)
@@ -2826,22 +2825,20 @@ class MainWindow(QMainWindow):
             QImage.Format.Format_BGR888,
         )
         self.video_label.set_frame_pixmap(QPixmap.fromImage(qimg), w, h, view_rect)
-        self._update_camera_hud(hud_targets, visible=not draw_hud_on_frame)
+        self._update_camera_hud(overlay_grid, visible=not draw_hud_on_frame)
         # 状态文本不需要每帧刷新；低频刷新可以减少 PyQt 文本布局开销
         if self._render_counter % 3 == 0:
             self._update_status_labels()
 
-    def _draw_hud_on_camera_frame(self) -> bool:
-        """收起右侧面板后将状态信息直接绘制到相机帧"""
-        return self.control_sidebar.isHidden()
+    def _draw_hud_on_camera_frame(self, output_size: Tuple[int, int], row_count: int) -> bool:
+        """面板收起或上方留白不足时将状态信息绘制到相机帧"""
+        blank_height = max(0, (self.video_label.height() - output_size[1]) // 2)
+        # 保证窗口缩放后文字不会越过留白压在相机画面边缘
+        return self.control_sidebar.isHidden() or blank_height < 14 + row_count * 28
 
-    def _update_camera_hud(self, hud_targets: list[dict], visible: bool) -> None:
-        """刷新普通窗口左上方的透明 HUD 文字层"""
-        self.camera_hud_label.setVisible(visible)
-        if not visible:
-            return
-
-        rows, _targets, _aligned = VisionEngine.hud_rows(
+    def _camera_hud_grid(self, hud_targets: list[dict]) -> list[list[Tuple[str, str, bool]]]:
+        """获取普通窗口和帧内绘制共用的三列 HUD 数据"""
+        grid, _targets, _aligned = VisionEngine.hud_grid(
             self.config,
             self.i18n,
             self.detected_xy,
@@ -2850,23 +2847,58 @@ class MainWindow(QMainWindow):
             self.last_status_key,
             hud_targets,
         )
+        return grid
+
+    def _update_camera_hud(self, grid: list[list[Tuple[str, str, bool]]], visible: bool) -> None:
+        """刷新普通窗口左上方的透明 HUD 文字层"""
+        self.camera_hud_label.setVisible(visible)
+        if not visible:
+            return
+
         colors = {
-            "normal": "#263746",
-            "score": "#9a6900",
-            "metric": "#007985",
-            "success": "#137a42",
-            "alert": "#c62828",
+            "normal": QColor("#344454"),
+            "score": QColor("#94600b"),
+            "metric": QColor("#087b84"),
+            "success": QColor("#267447"),
+            "alert": QColor("#a44642"),
         }
-        # 每行独立着色并保持透明背景以融入相机显示区
-        html_rows = []
-        for text, tone, bold in rows:
-            weight = 700 if bold else 500
-            html_rows.append(
-                f'<div style="color:{colors[tone]}; font-size:17px; font-weight:{weight}; '
-                f'line-height:1.32; white-space:nowrap">{html.escape(text)}</div>'
+        # 按最长单元格测量列宽并在窗口较窄时同步调整字号
+        available_width = max(200, self.video_label.width() - 44)
+        gutter = 26
+        for pixel_size in range(17, 10, -1):
+            base_font = QFont(self.font())
+            base_font.setPixelSize(pixel_size)
+            emphasized_font = QFont(base_font)
+            emphasized_font.setWeight(QFont.Weight.DemiBold)
+            fonts = {False: base_font, True: emphasized_font}
+            widths = [
+                max(QFontMetrics(fonts[row[col][2]]).horizontalAdvance(row[col][0])
+                    for row in grid if row[1][0] or row[2][0])
+                for col in range(3)
+            ]
+            footer_width = max(
+                (QFontMetrics(fonts[row[0][2]]).horizontalAdvance(row[0][0])
+                 for row in grid if not row[1][0] and not row[2][0]),
+                default=0,
             )
-        self.camera_hud_label.setText("".join(html_rows))
-        self.camera_hud_label.adjustSize()
+            total_width = max(sum(widths) + gutter * 2, footer_width) + 4
+            if total_width <= available_width:
+                break
+        column_x = [0, widths[0] + gutter, widths[0] + widths[1] + gutter * 2]
+        row_height = 28
+        overlay = QPixmap(total_width, len(grid) * row_height + 2)
+        overlay.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(overlay)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        for row_index, row in enumerate(grid):
+            for col, (text, tone, bold) in enumerate(row):
+                painter.setFont(fonts[bold])
+                painter.setPen(colors[tone])
+                baseline = row_index * row_height + QFontMetrics(fonts[bold]).ascent() + 2
+                painter.drawText(column_x[col], baseline, text)
+        painter.end()
+        self.camera_hud_label.setPixmap(overlay)
+        self.camera_hud_label.resize(overlay.size())
         # 面板展开时将文字固定在相机区域左上方留白中
         self.camera_hud_label.move(22, 10)
         self.camera_hud_label.raise_()
