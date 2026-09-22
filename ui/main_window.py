@@ -433,7 +433,32 @@ class MainWindow(QMainWindow):
         self.btn_show_vision.hide()
         self.control_sidebar_layout.addWidget(self.btn_show_vision)
 
-        self.main_splitter.addWidget(self.control_sidebar)
+        # 将收起入口嵌入控制栏左边缘并在面板隐藏后保留箭头
+        self.sidebar_shell = QWidget()
+        sidebar_shell_layout = QHBoxLayout(self.sidebar_shell)
+        sidebar_shell_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_shell_layout.setSpacing(0)
+        self.panel_toggle_rail = QWidget()
+        self.panel_toggle_rail.setFixedWidth(28)
+        self.panel_toggle_rail.setStyleSheet("background: #ffffff")
+        toggle_rail_layout = QVBoxLayout(self.panel_toggle_rail)
+        toggle_rail_layout.setContentsMargins(0, 0, 0, 0)
+        toggle_rail_layout.addStretch()
+        self.btn_toggle_controls = QPushButton()
+        self.btn_toggle_controls.setObjectName("toggleControlsButton")
+        self.btn_toggle_controls.setFixedSize(28, 64)
+        self.btn_toggle_controls.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle_controls.setStyleSheet(
+            "QPushButton#toggleControlsButton { color: #526b7f; background: transparent; "
+            "border: none; font-size: 20px; font-weight: 700 } "
+            "QPushButton#toggleControlsButton:hover { color: #14699e; background: #eaf4fa }"
+        )
+        self.btn_toggle_controls.clicked.connect(self._toggle_control_panel)
+        toggle_rail_layout.addWidget(self.btn_toggle_controls)
+        toggle_rail_layout.addStretch()
+        sidebar_shell_layout.addWidget(self.panel_toggle_rail)
+        sidebar_shell_layout.addWidget(self.control_sidebar)
+        self.main_splitter.addWidget(self.sidebar_shell)
         self.main_splitter.setStretchFactor(0, 1)
         self.main_splitter.setStretchFactor(1, 0)
         self.main_splitter.setSizes([1120, 330])
@@ -459,25 +484,6 @@ class MainWindow(QMainWindow):
         self.main_splitter.splitterMoved.connect(self._sync_vision_overlay_width)
         QTimer.singleShot(0, self._sync_vision_overlay_width)
 
-        # 一键收起右侧面板便于将窗口宽度全部用于相机画面
-        self.btn_toggle_controls = QPushButton()
-        self.btn_toggle_controls.setObjectName("toggleControlsButton")
-        self.btn_toggle_controls.setFixedHeight(28)
-        self.btn_toggle_controls.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle_controls.setStyleSheet(
-            "QPushButton#toggleControlsButton { color: white; background: rgba(4,14,25,105); "
-            "border: 1px solid rgba(220,238,255,145); border-radius: 6px; padding: 3px 9px; font-weight: 600 } "
-            "QPushButton#toggleControlsButton:hover { background: rgba(17,92,138,175); border-color: #8fddff }"
-        )
-        self.btn_toggle_controls.clicked.connect(self._toggle_control_panel)
-        video_grid.addWidget(
-            self.btn_toggle_controls,
-            0,
-            0,
-            alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
-        )
-        self.btn_toggle_controls.raise_()
-
         # 所有右侧子控件创建完成后统一安装滚轮过滤器
         self._install_control_panel_wheel_filter()
         self.resize(1480, 860)
@@ -485,19 +491,30 @@ class MainWindow(QMainWindow):
     def _toggle_control_panel(self) -> None:
         """切换右侧控制面板并自动扩展视频区域"""
         show_controls = self.control_sidebar.isHidden()
+        if not show_controls:
+            # 收起前记录当前控制栏宽度以便展开时恢复用户调整结果
+            self._controls_expanded_width = self.sidebar_shell.width()
         self.control_sidebar.setVisible(show_controls)
+        total_width = max(1, self.main_splitter.width())
         if show_controls:
-            total_width = max(1, self.main_splitter.width())
-            self.main_splitter.setSizes([max(1, total_width - 330), 330])
+            sidebar_width = getattr(self, "_controls_expanded_width", 330)
+            self.main_splitter.setSizes([max(1, total_width - sidebar_width), sidebar_width])
         else:
-            self.main_splitter.setSizes([max(1, self.main_splitter.width()), 0])
-        self.btn_toggle_controls.setText(
-            self.i18n.t("hide_controls") if show_controls else self.i18n.t("show_controls")
-        )
+            rail_width = self.panel_toggle_rail.width()
+            self.main_splitter.setSizes([max(1, total_width - rail_width), rail_width])
+        self._update_control_toggle()
         if show_controls:
             QTimer.singleShot(0, self._sync_vision_overlay_width)
         # 收起控制栏时相机区域按全屏方式直接承载 HUD
         self.camera_hud_label.setVisible(show_controls)
+
+    def _update_control_toggle(self) -> None:
+        """同步控制栏箭头及无文字按钮的操作提示"""
+        controls_visible = not self.control_sidebar.isHidden()
+        self.btn_toggle_controls.setText("<" if controls_visible else ">")
+        action_text = self.i18n.t("hide_controls" if controls_visible else "show_controls")
+        self.btn_toggle_controls.setToolTip(action_text)
+        self.btn_toggle_controls.setAccessibleName(action_text)
 
     def _sync_vision_overlay_width(self, *_args) -> None:
         """让自动识别抽屉宽度跟随右侧控制面板"""
@@ -1314,9 +1331,7 @@ class MainWindow(QMainWindow):
         self.secondary_sensitivity_label.setText(t("vision_secondary_sensitivity_compact"))
         self.vision_help_label.setText(t("vision_help_compact"))
         self.vision_help_label.setToolTip(t("vision_help"))
-        controls_visible = not self.control_sidebar.isHidden()
-        self.btn_toggle_controls.setText(t("hide_controls") if controls_visible else t("show_controls"))
-        self.btn_toggle_controls.setToolTip(t("toggle_controls_hint"))
+        self._update_control_toggle()
 
         self.status_group.setTitle(t("status"))
         self.btn_save.setText(t("save"))
