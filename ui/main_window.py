@@ -440,14 +440,15 @@ class MainWindow(QMainWindow):
         sidebar_shell_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_shell_layout.setSpacing(0)
         sidebar_shell_layout.addWidget(self.control_sidebar)
-        # 半透明圆角箭头悬在控制栏左侧并跟随分隔条移动
+        # 半透明箭头用左侧圆角和直角接缝连接控制栏边缘
         self.btn_toggle_controls = QPushButton(root)
         self.btn_toggle_controls.setObjectName("toggleControlsButton")
         self.btn_toggle_controls.setFixedSize(20, 32)
         self.btn_toggle_controls.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle_controls.setStyleSheet(
             "QPushButton#toggleControlsButton { color: #526b7f; background: rgba(245,249,252,185); "
-            "border: 1px solid rgba(113,139,158,145); border-radius: 6px; "
+            "border: 1px solid rgba(113,139,158,145); border-right: none; "
+            "border-top-left-radius: 6px; border-bottom-left-radius: 6px; "
             "font-size: 18px; font-weight: 700 } "
             "QPushButton#toggleControlsButton:hover { color: #14699e; "
             "background: rgba(222,239,249,225); border-color: rgba(71,143,184,190) }"
@@ -517,7 +518,8 @@ class MainWindow(QMainWindow):
     def _position_control_toggle(self) -> None:
         """将箭头固定在控制栏左边界之外"""
         panel_corner = self.sidebar_shell.mapTo(self.centralWidget(), self.sidebar_shell.rect().topLeft())
-        self.btn_toggle_controls.move(panel_corner.x() - self.btn_toggle_controls.width(), panel_corner.y() + 32)
+        # 让标签右端轻压在控制栏边界上以消除圆角造成的接缝
+        self.btn_toggle_controls.move(panel_corner.x() - self.btn_toggle_controls.width() + 2, panel_corner.y() + 32)
         self.btn_toggle_controls.raise_()
 
     def _sync_vision_overlay_width(self, *_args) -> None:
