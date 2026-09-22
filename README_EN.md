@@ -405,6 +405,14 @@ The QHY backend is currently a placeholder implementation Contributions based on
 
 ---
 
+## Author
+
+- Author: **Leo-John233**
+- Contact: `badshroud233@gmail.com`
+- Project: [OCRA Optical Collimation Reference Assistant](https://github.com/Leo-John233/OCRA-OpticalCollimationReferenceAssistant)
+
+---
+
 ## License
 
 OCRA's original source code is released under the **Mozilla Public License 2.0 (MPL-2.0)** You may use, modify, and distribute this project, but when distributing modifications to MPL-covered files, you must continue to provide the corresponding source code and retain the license notice See [`LICENSE`](./LICENSE) for the complete terms

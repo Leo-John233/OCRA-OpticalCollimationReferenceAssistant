@@ -1,5 +1,5 @@
 OCRA Startup Diagnostics / OCRA 启动诊断
-Generated / 生成时间: 2026-09-16 02:51:30
+Generated / 生成时间: 2026-09-22 16:18:28
 Executable / 程序: D:\miniconda3\envs\ScanToCadInspection\python.exe
 Working directory / 工作目录: E:\GitHub
 Frozen / 打包模式: False
@@ -17,7 +17,7 @@ Frozen / 打包模式: False
 05. [PASS] Microsoft Visual C++ x64 运行库可加载
 
 06. [INFO] 已配置 Windows DLL 与 Qt 插件搜索路径
-    Detail / 详情: dll_dirs=['E:\\GitHub\\OCRA', 'E:\\GitHub\\OCRA\\.serena\\cache\\uv\\archive-v0\\JTk1Kp77O0O8m2Wy\\PyQt6\\Qt6\\bin', 'D:\\miniconda3\\envs\\Python3.13\\Lib\\site-packages\\PyQt6\\Qt6\\bin', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\bin'] | plugin_dirs=['E:\\GitHub\\OCRA\\.serena\\cache\\uv\\archive-v0\\JTk1Kp77O0O8m2Wy\\PyQt6\\Qt6\\plugins', 'E:\\GitHub\\OCRA\\.serena\\cache\\uv\\archive-v0\\JTk1Kp77O0O8m2Wy\\PyQt6\\Qt6\\plugins\\platforms', 'D:\\miniconda3\\envs\\Python3.13\\Lib\\site-packages\\PyQt6\\Qt6\\plugins', 'D:\\miniconda3\\envs\\Python3.13\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\platforms', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\plugins', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\plugins\\platforms']
+    Detail / 详情: dll_dirs=['E:\\GitHub\\OCRA', 'E:\\GitHub\\OCRA\\py_build\\.build_env\\Lib\\site-packages\\PyQt6\\Qt6\\bin', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\bin'] | plugin_dirs=['E:\\GitHub\\OCRA\\py_build\\.build_env\\Lib\\site-packages\\PyQt6\\Qt6\\plugins', 'E:\\GitHub\\OCRA\\py_build\\.build_env\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\platforms', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\plugins', 'E:\\GitHub\\OCRA\\py_build\\dist\\OCRA\\_internal\\PyQt6\\Qt6\\plugins\\platforms']
 
 07. [INFO] 当前为 Python 源码运行模式
 

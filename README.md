@@ -405,6 +405,14 @@ QHY 后端目前是占位实现欢迎基于 QHYCCD SDK 完成设备枚举、参�
 
 ---
 
+## 作者
+
+- 作者：**Leo-John233**
+- 联系邮箱：`badshroud233@gmail.com`
+- 项目主页：[OCRA Optical Collimation Reference Assistant](https://github.com/Leo-John233/OCRA-OpticalCollimationReferenceAssistant)
+
+---
+
 ## License
 
 OCRA 的原创源代码采用 **Mozilla Public License 2.0（MPL-2.0）** 发布你可以使用、修改和分发本项目，但对 MPL 覆盖文件的修改在分发时仍需提供对应源代码并保留许可证声明完整条款见 [`LICENSE`](https://github.com/Leo-John233/OCRA-OpticalCollimationReferenceAssistant/blob/main/LICENSE)

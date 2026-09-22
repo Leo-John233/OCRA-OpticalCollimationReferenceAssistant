@@ -41,6 +41,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.app_state import AppConfig, CircleConfig
+from core.app_info import AUTHOR_EMAIL, AUTHOR_NAME, LICENSE_NAME, PROJECT_URL
 from core.config_manager import ConfigManager
 from core.focus_control import FOCUS_OFFSET_LIMIT, focus_from_offset, focus_to_offset
 from core.environment_check import EnvironmentReport, run_environment_check
@@ -535,9 +536,14 @@ class MainWindow(QMainWindow):
         row1.addWidget(self.btn_reset)
         layout.addLayout(row1)
 
+        row2 = QHBoxLayout()
         self.btn_environment_check = QPushButton()
+        self.btn_about = QPushButton()
         self.btn_environment_check.clicked.connect(self.show_environment_check)
-        layout.addWidget(self.btn_environment_check)
+        self.btn_about.clicked.connect(self.show_about)
+        row2.addWidget(self.btn_environment_check)
+        row2.addWidget(self.btn_about)
+        layout.addLayout(row2)
 
         self.panel_layout.addWidget(self.control_group)
 
@@ -1221,6 +1227,7 @@ class MainWindow(QMainWindow):
         self.btn_stop.setText(t("stop"))
         self.btn_reset.setText(t("reset_center"))
         self.btn_environment_check.setText(t("environment_check"))
+        self.btn_about.setText(t("about"))
 
         self.camera_group.setTitle(t("camera"))
         self.camera_basic_group.setTitle(t("camera_basic"))
@@ -1359,6 +1366,18 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # 相机控制
     # ------------------------------------------------------------------
+    def show_about(self) -> None:
+        """显示作者、项目主页和许可证信息。"""
+        t = self.i18n.t
+        message = (
+            f"<p><b>OCRA</b><br>{t('about_description')}</p>"
+            f"<p>{t('author')}: <b>{AUTHOR_NAME}</b><br>"
+            f"{t('contact')}: <a href=\"mailto:{AUTHOR_EMAIL}\">{AUTHOR_EMAIL}</a><br>"
+            f"{t('project_home')}: <a href=\"{PROJECT_URL}\">GitHub</a><br>"
+            f"{t('license_label')}: {LICENSE_NAME}</p>"
+        )
+        QMessageBox.about(self, t("about_title"), message)
+
     def _on_ui_fps_changed(self, fps: int) -> None:
         """在线调整 UI 显示帧率
 
