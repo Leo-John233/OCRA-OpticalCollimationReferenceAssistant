@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import copy
+import html
 import math
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
@@ -380,6 +381,14 @@ class MainWindow(QMainWindow):
         self.video_label.zoom_wheel_delta.connect(self._on_video_wheel_zoom)
         video_grid.addWidget(self.video_label, 0, 0)
 
+        # 普通窗口使用独立透明文字层避免状态信息写入相机画面
+        self.camera_hud_label = QLabel(self.video_label)
+        self.camera_hud_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.camera_hud_label.setTextFormat(Qt.TextFormat.RichText)
+        self.camera_hud_label.setStyleSheet("background: transparent; border: none")
+        self.camera_hud_label.move(18, 14)
+        self.camera_hud_label.show()
+
         self.view_pan_y_slider = QSlider(Qt.Orientation.Vertical)
         self.view_pan_y_slider.setRange(-1500, 1500)
         self.view_pan_y_slider.setValue(int(self.config.view_pan_y))
@@ -489,6 +498,8 @@ class MainWindow(QMainWindow):
         )
         if show_controls:
             QTimer.singleShot(0, self._sync_vision_overlay_width)
+        # 收起控制栏时相机区域按全屏方式直接承载 HUD
+        self.camera_hud_label.setVisible(show_controls)
 
     def _sync_vision_overlay_width(self, *_args) -> None:
         """让自动识别抽屉宽度跟随右侧控制面板"""
@@ -2799,9 +2810,10 @@ class MainWindow(QMainWindow):
             self.secondary_xy,
             self.active_target,
         )
+        draw_hud_on_frame = self._draw_hud_on_camera_frame()
         VisionEngine.draw_hud(display_frame, self.config, self.i18n, self.detected_xy,
                               self.last_score, self.last_source_key, self.last_status_key,
-                              target_metrics=hud_targets)
+                              target_metrics=hud_targets, draw_text=draw_hud_on_frame)
         # 用户反馈底部 dx/dy/dist/score 曲线实际意义不大，正式界面只保留左上角 HUD 提示
 
         # Qt 直接读取 OpenCV 的 BGR 缓冲并省去一次全帧颜色转换
@@ -2814,9 +2826,53 @@ class MainWindow(QMainWindow):
             QImage.Format.Format_BGR888,
         )
         self.video_label.set_frame_pixmap(QPixmap.fromImage(qimg), w, h, view_rect)
+        self._update_camera_hud(hud_targets, visible=not draw_hud_on_frame)
         # 状态文本不需要每帧刷新；低频刷新可以减少 PyQt 文本布局开销
         if self._render_counter % 3 == 0:
             self._update_status_labels()
+
+    def _draw_hud_on_camera_frame(self) -> bool:
+        """判断当前状态信息是否需要直接绘制到相机帧"""
+        return self.isFullScreen() or self.isMaximized() or self.control_sidebar.isHidden()
+
+    def _update_camera_hud(self, hud_targets: list[dict], visible: bool) -> None:
+        """刷新普通窗口左上方的透明 HUD 文字层"""
+        self.camera_hud_label.setVisible(visible)
+        if not visible:
+            return
+
+        rows, _targets, _aligned = VisionEngine.hud_rows(
+            self.config,
+            self.i18n,
+            self.detected_xy,
+            self.last_score,
+            self.last_source_key,
+            self.last_status_key,
+            hud_targets,
+        )
+        colors = {
+            "normal": "#f2f5f7",
+            "score": "#ffd84d",
+            "metric": "#35e5e5",
+            "success": "#55df82",
+            "alert": "#ff5151",
+        }
+        # 每行独立着色并保持透明背景以融入相机显示区
+        html_rows = []
+        for text, tone, bold in rows:
+            weight = 700 if bold else 500
+            html_rows.append(
+                f'<div style="color:{colors[tone]}; font-size:17px; font-weight:{weight}; '
+                f'line-height:1.32; white-space:nowrap">{html.escape(text)}</div>'
+            )
+        self.camera_hud_label.setText("".join(html_rows))
+        self.camera_hud_label.adjustSize()
+        pixmap = self.video_label.pixmap()
+        # 文字层始终贴合实际相机画面的左上角并跟随窗口缩放
+        frame_x = max(0, (self.video_label.width() - pixmap.width()) // 2) if pixmap else 0
+        frame_y = max(0, (self.video_label.height() - pixmap.height()) // 2) if pixmap else 0
+        self.camera_hud_label.move(frame_x + 18, frame_y + 14)
+        self.camera_hud_label.raise_()
 
     def _display_output_size(self, frame_w: int, frame_h: int) -> Tuple[int, int]:
         """计算最终要送到 QLabel 的显示图尺寸

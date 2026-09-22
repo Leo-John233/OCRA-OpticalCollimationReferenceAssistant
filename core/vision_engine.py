@@ -489,18 +489,11 @@ class VisionEngine:
         return text, guide, m["dx"], m["dy"], m["dist"]
 
     @staticmethod
-    def draw_hud(frame: np.ndarray, config: AppConfig, i18n,
+    def hud_rows(config: AppConfig, i18n,
                  detected_xy: Optional[Tuple[int, int]], score: float,
                  source_key: str, status_key: str,
-                 target_metrics: Optional[list[dict]] = None) -> np.ndarray:
-        """绘制左上角信息块和方向提示
-
-        新逻辑：HUD 的“检测目标”和其下方 dx/dy/dist/Guide 必须跟随“持续吸附”勾选的圆
-        - 只勾选中圈持续吸附：显示中圈数据
-        - 只勾选内圈持续吸附：显示内圈数据
-        - 中圈和内圈都勾选：同时显示两组数据，不再用单一目标覆盖另一组
-        - 没有勾选持续吸附：保持原来的手动目标数据
-        """
+                 target_metrics: Optional[list[dict]] = None) -> Tuple[list[Tuple[str, str, bool]], list[dict], bool]:
+        """生成可供窗口文字层和相机帧共用的 HUD 内容"""
         targets = list(target_metrics or [])
         if not targets:
             targets = [{
@@ -513,25 +506,12 @@ class VisionEngine:
 
         tol = max(0.1, config.guide_tolerance)
         measurements = [VisionEngine.measure(config, item.get("xy")) for item in targets]
-        # 同时显示中圈和内圈时，整体状态只有在两者都进容差后才显示已对准
+        # 多目标必须全部进入容差才显示已对准
         all_aligned = bool(targets) and config.reference_locked and all(m["dist"] <= tol for m in measurements)
         status_text = i18n.t("within_tolerance") if all_aligned else i18n.t(status_key)
-
-        scale = VisionEngine._hud_scale(frame)
-        # 多目标会多显示几行，自动略微压缩字号，避免遮挡画面
-        multi = len(targets) > 1
-        title_size = VisionEngine._scaled(26, scale, 18)
-        normal_size = VisionEngine._scaled(19 if multi else 20, scale, 13)
-        score_size = VisionEngine._scaled(21 if multi else 22, scale, 14)
-        margin_x = VisionEngine._scaled(18, scale, 10)
-        margin_y = VisionEngine._scaled(12, scale, 8)
-        line_gap = VisionEngine._scaled(25 if multi else 27, scale, 18)
-        stroke = VisionEngine._scaled(2, scale, 1)
-
         ref_text = i18n.t("hud_reference_locked") if config.reference_locked else i18n.t("hud_reference_unlocked")
-        lines = [
-            (i18n.t("app_title_short"), (255, 255, 255), title_size, True),
-            (f"{i18n.t('hud_reference')}: {ref_text}", (255, 255, 255), normal_size, True),
+        rows: list[Tuple[str, str, bool]] = [
+            (f"{i18n.t('hud_reference')}: {ref_text}", "normal", True),
         ]
 
         if len(targets) == 1:
@@ -542,27 +522,79 @@ class VisionEngine:
             guide = VisionEngine.guide_text(config, i18n, xy)
             confidence = i18n.t("confidence_high") if local_score >= 80 else (i18n.t("confidence_mid") if local_score >= 50 else i18n.t("confidence_low"))
             px = i18n.t("hud_px")
-            lines.extend([
-                (f"{i18n.t('hud_source')}: {VisionEngine._target_display_name(i18n, item)}", (255, 255, 255), normal_size, False),
-                (f"{i18n.t('hud_confidence')}: {confidence} ({local_score:.0f})", (255, 255, 255), normal_size, False),
-                (f"{i18n.t('hud_score')}: {local_score:.1f} / 100", (0, 220, 255), score_size, True),
-                (f"{i18n.t('hud_dx')}: {m['dx']:+.1f} {px}", (255, 255, 0), normal_size, True),
-                (f"{i18n.t('hud_dy')}: {m['dy']:+.1f} {px}", (255, 255, 0), normal_size, True),
-                (f"{i18n.t('hud_dist')}: {m['dist']:.1f} {px}", (255, 255, 0), normal_size, True),
-                (f"{i18n.t('hud_guide')}: {guide}", (255, 255, 255), normal_size, False),
+            rows.extend([
+                (f"{i18n.t('hud_source')}: {VisionEngine._target_display_name(i18n, item)}", "normal", False),
+                (f"{i18n.t('hud_confidence')}: {confidence} ({local_score:.0f})", "normal", False),
+                (f"{i18n.t('hud_score')}: {local_score:.1f} / 100", "score", True),
+                (f"{i18n.t('hud_dx')}: {m['dx']:+.1f} {px}", "metric", True),
+                (f"{i18n.t('hud_dy')}: {m['dy']:+.1f} {px}", "metric", True),
+                (f"{i18n.t('hud_dist')}: {m['dist']:.1f} {px}", "metric", True),
+                (f"{i18n.t('hud_guide')}: {guide}", "normal", False),
             ])
         else:
             target_names = " + ".join(VisionEngine._target_display_name(i18n, item) for item in targets)
-            lines.append((f"{i18n.t('hud_source')}: {target_names}", (255, 255, 255), normal_size, True))
-            # 两个圆同时持续吸附时，将中圈/内圈分成两组同屏显示
+            rows.append((f"{i18n.t('hud_source')}: {target_names}", "normal", True))
+            # 多目标按目标分别呈现偏差和调节方向
             for item in targets:
                 metric_text, guide, _dx, _dy, dist = VisionEngine._compact_metric_line(config, i18n, item)
-                color = (0, 220, 0) if dist <= tol and config.reference_locked else (255, 255, 0)
-                lines.append((metric_text, color, normal_size, True))
-                lines.append((f"{VisionEngine._target_display_name(i18n, item)} {i18n.t('hud_guide')}: {guide}", (255, 255, 255), normal_size, False))
+                tone = "success" if dist <= tol and config.reference_locked else "metric"
+                rows.append((metric_text, tone, True))
+                rows.append((f"{VisionEngine._target_display_name(i18n, item)} {i18n.t('hud_guide')}: {guide}", "normal", False))
 
-        lines.append((f"{i18n.t('hud_status')}: {status_text}", (0, 0, 255) if not all_aligned else (0, 220, 0), normal_size, True))
-        VisionEngine._draw_text_block(frame, lines, margin_x, margin_y, line_gap, stroke)
+        rows.append((
+            f"{i18n.t('hud_status')}: {status_text}",
+            "success" if all_aligned else "alert",
+            True,
+        ))
+        return rows, targets, all_aligned
+
+    @staticmethod
+    def draw_hud(frame: np.ndarray, config: AppConfig, i18n,
+                 detected_xy: Optional[Tuple[int, int]], score: float,
+                 source_key: str, status_key: str,
+                 target_metrics: Optional[list[dict]] = None,
+                 draw_text: bool = True) -> np.ndarray:
+        """绘制左上角信息块和方向提示
+
+        新逻辑：HUD 的“检测目标”和其下方 dx/dy/dist/Guide 必须跟随“持续吸附”勾选的圆
+        - 只勾选中圈持续吸附：显示中圈数据
+        - 只勾选内圈持续吸附：显示内圈数据
+        - 中圈和内圈都勾选：同时显示两组数据，不再用单一目标覆盖另一组
+        - 没有勾选持续吸附：保持原来的手动目标数据
+        """
+        tol = max(0.1, config.guide_tolerance)
+        rows, targets, _all_aligned = VisionEngine.hud_rows(
+            config,
+            i18n,
+            detected_xy,
+            score,
+            source_key,
+            status_key,
+            target_metrics,
+        )
+
+        if draw_text:
+            scale = VisionEngine._hud_scale(frame)
+            # 多目标自动压缩字号以减少画面遮挡
+            multi = len(targets) > 1
+            normal_size = VisionEngine._scaled(19 if multi else 20, scale, 13)
+            score_size = VisionEngine._scaled(21 if multi else 22, scale, 14)
+            margin_x = VisionEngine._scaled(18, scale, 10)
+            margin_y = VisionEngine._scaled(12, scale, 8)
+            line_gap = VisionEngine._scaled(25 if multi else 27, scale, 18)
+            stroke = VisionEngine._scaled(2, scale, 1)
+            colors = {
+                "normal": (255, 255, 255),
+                "score": (0, 220, 255),
+                "metric": (255, 255, 0),
+                "success": (0, 220, 0),
+                "alert": (0, 0, 255),
+            }
+            lines = [
+                (text, colors[tone], score_size if tone == "score" else normal_size, bold)
+                for text, tone, bold in rows
+            ]
+            VisionEngine._draw_text_block(frame, lines, margin_x, margin_y, line_gap, stroke)
 
         # 单目标时保留 OCAL 风格的大方向箭头双目标可能出现方向冲突，
         # 此时只在 HUD 中分别给出中圈/内圈文本建议，避免大箭头误导用户
