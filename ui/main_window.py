@@ -433,30 +433,30 @@ class MainWindow(QMainWindow):
         self.btn_show_vision.hide()
         self.control_sidebar_layout.addWidget(self.btn_show_vision)
 
-        # 箭头贴在控制栏左边缘而不为其预留整条空白区域
+        # 控制栏本身不为箭头留宽度
         self.sidebar_shell = QWidget()
-        self.sidebar_shell.setMinimumWidth(20)
+        self.sidebar_shell.setMinimumWidth(1)
         sidebar_shell_layout = QHBoxLayout(self.sidebar_shell)
         sidebar_shell_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_shell_layout.setSpacing(0)
         sidebar_shell_layout.addWidget(self.control_sidebar)
-        self.btn_toggle_controls = QPushButton(self.sidebar_shell)
+        # 透明箭头悬在控制栏左侧并跟随分隔条移动
+        self.btn_toggle_controls = QPushButton(root)
         self.btn_toggle_controls.setObjectName("toggleControlsButton")
         self.btn_toggle_controls.setFixedSize(20, 32)
-        self.btn_toggle_controls.move(0, 32)
         self.btn_toggle_controls.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle_controls.setStyleSheet(
-            "QPushButton#toggleControlsButton { color: #526b7f; background: #f5f9fc; "
-            "border: 1px solid #d9e5ed; border-left: none; border-top-right-radius: 5px; "
-            "border-bottom-right-radius: 5px; font-size: 16px; font-weight: 700 } "
-            "QPushButton#toggleControlsButton:hover { color: #14699e; background: #eaf4fa }"
+            "QPushButton#toggleControlsButton { color: #526b7f; background: transparent; "
+            "border: none; font-size: 18px; font-weight: 700 } "
+            "QPushButton#toggleControlsButton:hover { color: #14699e; background: transparent }"
         )
         self.btn_toggle_controls.clicked.connect(self._toggle_control_panel)
-        self.btn_toggle_controls.raise_()
         self.main_splitter.addWidget(self.sidebar_shell)
+        self.sidebar_shell.installEventFilter(self)
         self.main_splitter.setStretchFactor(0, 1)
         self.main_splitter.setStretchFactor(1, 0)
         self.main_splitter.setSizes([1120, 330])
+        QTimer.singleShot(0, self._position_control_toggle)
 
         self._build_control_group()
         self._build_camera_group()
@@ -495,9 +495,9 @@ class MainWindow(QMainWindow):
             sidebar_width = getattr(self, "_controls_expanded_width", 330)
             self.main_splitter.setSizes([max(1, total_width - sidebar_width), sidebar_width])
         else:
-            # 收起后仅保留箭头按钮自身宽度供再次展开
-            toggle_width = self.btn_toggle_controls.width()
-            self.main_splitter.setSizes([max(1, total_width - toggle_width), toggle_width])
+            # 收起后仅保留控制栏边界并让箭头悬在边界左侧
+            self.main_splitter.setSizes([max(1, total_width - 1), 1])
+        self._position_control_toggle()
         self._update_control_toggle()
         if show_controls:
             QTimer.singleShot(0, self._sync_vision_overlay_width)
@@ -511,6 +511,12 @@ class MainWindow(QMainWindow):
         action_text = self.i18n.t("hide_controls" if controls_visible else "show_controls")
         self.btn_toggle_controls.setToolTip(action_text)
         self.btn_toggle_controls.setAccessibleName(action_text)
+
+    def _position_control_toggle(self) -> None:
+        """将箭头固定在控制栏左边界之外"""
+        panel_corner = self.sidebar_shell.mapTo(self.centralWidget(), self.sidebar_shell.rect().topLeft())
+        self.btn_toggle_controls.move(panel_corner.x() - self.btn_toggle_controls.width(), panel_corner.y() + 32)
+        self.btn_toggle_controls.raise_()
 
     def _sync_vision_overlay_width(self, *_args) -> None:
         """让自动识别抽屉宽度跟随右侧控制面板"""
@@ -1039,6 +1045,10 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event):  # noqa: N802 - Qt 固定函数名
         """拦截右侧参数栏滚轮事件，避免滚轮修改输入框/下拉框/滑条"""
+        # 分隔条或窗口改变控制栏位置时同步移动外侧箭头
+        if obj is getattr(self, "sidebar_shell", None) and event.type() in (QEvent.Type.Move, QEvent.Type.Resize):
+            if hasattr(self, "btn_toggle_controls"):
+                self._position_control_toggle()
         if event.type() == QEvent.Type.Wheel and hasattr(self, "control_panel"):
             try:
                 in_control_panel = obj is self.control_panel or self.control_panel.isAncestorOf(obj)
