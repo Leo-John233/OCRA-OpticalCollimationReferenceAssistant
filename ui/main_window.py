@@ -433,31 +433,26 @@ class MainWindow(QMainWindow):
         self.btn_show_vision.hide()
         self.control_sidebar_layout.addWidget(self.btn_show_vision)
 
-        # 将收起入口嵌入控制栏左边缘并在面板隐藏后保留箭头
+        # 箭头贴在控制栏左边缘而不为其预留整条空白区域
         self.sidebar_shell = QWidget()
+        self.sidebar_shell.setMinimumWidth(20)
         sidebar_shell_layout = QHBoxLayout(self.sidebar_shell)
         sidebar_shell_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_shell_layout.setSpacing(0)
-        self.panel_toggle_rail = QWidget()
-        self.panel_toggle_rail.setFixedWidth(28)
-        self.panel_toggle_rail.setStyleSheet("background: #ffffff")
-        toggle_rail_layout = QVBoxLayout(self.panel_toggle_rail)
-        toggle_rail_layout.setContentsMargins(0, 0, 0, 0)
-        toggle_rail_layout.addStretch()
-        self.btn_toggle_controls = QPushButton()
+        sidebar_shell_layout.addWidget(self.control_sidebar)
+        self.btn_toggle_controls = QPushButton(self.sidebar_shell)
         self.btn_toggle_controls.setObjectName("toggleControlsButton")
-        self.btn_toggle_controls.setFixedSize(28, 64)
+        self.btn_toggle_controls.setFixedSize(20, 32)
+        self.btn_toggle_controls.move(0, 32)
         self.btn_toggle_controls.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle_controls.setStyleSheet(
-            "QPushButton#toggleControlsButton { color: #526b7f; background: transparent; "
-            "border: none; font-size: 20px; font-weight: 700 } "
+            "QPushButton#toggleControlsButton { color: #526b7f; background: #f5f9fc; "
+            "border: 1px solid #d9e5ed; border-left: none; border-top-right-radius: 5px; "
+            "border-bottom-right-radius: 5px; font-size: 16px; font-weight: 700 } "
             "QPushButton#toggleControlsButton:hover { color: #14699e; background: #eaf4fa }"
         )
         self.btn_toggle_controls.clicked.connect(self._toggle_control_panel)
-        toggle_rail_layout.addWidget(self.btn_toggle_controls)
-        toggle_rail_layout.addStretch()
-        sidebar_shell_layout.addWidget(self.panel_toggle_rail)
-        sidebar_shell_layout.addWidget(self.control_sidebar)
+        self.btn_toggle_controls.raise_()
         self.main_splitter.addWidget(self.sidebar_shell)
         self.main_splitter.setStretchFactor(0, 1)
         self.main_splitter.setStretchFactor(1, 0)
@@ -500,8 +495,9 @@ class MainWindow(QMainWindow):
             sidebar_width = getattr(self, "_controls_expanded_width", 330)
             self.main_splitter.setSizes([max(1, total_width - sidebar_width), sidebar_width])
         else:
-            rail_width = self.panel_toggle_rail.width()
-            self.main_splitter.setSizes([max(1, total_width - rail_width), rail_width])
+            # 收起后仅保留箭头按钮自身宽度供再次展开
+            toggle_width = self.btn_toggle_controls.width()
+            self.main_splitter.setSizes([max(1, total_width - toggle_width), toggle_width])
         self._update_control_toggle()
         if show_controls:
             QTimer.singleShot(0, self._sync_vision_overlay_width)
