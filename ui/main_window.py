@@ -2832,8 +2832,8 @@ class MainWindow(QMainWindow):
             self._update_status_labels()
 
     def _draw_hud_on_camera_frame(self) -> bool:
-        """判断当前状态信息是否需要直接绘制到相机帧"""
-        return self.isFullScreen() or self.isMaximized() or self.control_sidebar.isHidden()
+        """收起右侧面板后将状态信息直接绘制到相机帧"""
+        return self.control_sidebar.isHidden()
 
     def _update_camera_hud(self, hud_targets: list[dict], visible: bool) -> None:
         """刷新普通窗口左上方的透明 HUD 文字层"""
@@ -2851,11 +2851,11 @@ class MainWindow(QMainWindow):
             hud_targets,
         )
         colors = {
-            "normal": "#f2f5f7",
-            "score": "#ffd84d",
-            "metric": "#35e5e5",
-            "success": "#55df82",
-            "alert": "#ff5151",
+            "normal": "#263746",
+            "score": "#9a6900",
+            "metric": "#007985",
+            "success": "#137a42",
+            "alert": "#c62828",
         }
         # 每行独立着色并保持透明背景以融入相机显示区
         html_rows = []
@@ -2867,11 +2867,8 @@ class MainWindow(QMainWindow):
             )
         self.camera_hud_label.setText("".join(html_rows))
         self.camera_hud_label.adjustSize()
-        pixmap = self.video_label.pixmap()
-        # 文字层始终贴合实际相机画面的左上角并跟随窗口缩放
-        frame_x = max(0, (self.video_label.width() - pixmap.width()) // 2) if pixmap else 0
-        frame_y = max(0, (self.video_label.height() - pixmap.height()) // 2) if pixmap else 0
-        self.camera_hud_label.move(frame_x + 18, frame_y + 14)
+        # 面板展开时将文字固定在相机区域左上方留白中
+        self.camera_hud_label.move(22, 10)
         self.camera_hud_label.raise_()
 
     def _display_output_size(self, frame_w: int, frame_h: int) -> Tuple[int, int]:

@@ -522,30 +522,52 @@ class VisionEngine:
             guide = VisionEngine.guide_text(config, i18n, xy)
             confidence = i18n.t("confidence_high") if local_score >= 80 else (i18n.t("confidence_mid") if local_score >= 50 else i18n.t("confidence_low"))
             px = i18n.t("hud_px")
-            rows.extend([
-                (f"{i18n.t('hud_source')}: {VisionEngine._target_display_name(i18n, item)}", "normal", False),
-                (f"{i18n.t('hud_confidence')}: {confidence} ({local_score:.0f})", "normal", False),
-                (f"{i18n.t('hud_score')}: {local_score:.1f} / 100", "score", True),
-                (f"{i18n.t('hud_dx')}: {m['dx']:+.1f} {px}", "metric", True),
-                (f"{i18n.t('hud_dy')}: {m['dy']:+.1f} {px}", "metric", True),
-                (f"{i18n.t('hud_dist')}: {m['dist']:.1f} {px}", "metric", True),
-                (f"{i18n.t('hud_guide')}: {guide}", "normal", False),
-            ])
+            # 四行紧凑布局适配相机画面上方的留白区域
+            rows = [
+                (
+                    f"{i18n.t('hud_reference')}: {ref_text}  ·  "
+                    f"{i18n.t('hud_source')}: {VisionEngine._target_display_name(i18n, item)}",
+                    "normal",
+                    True,
+                ),
+                (
+                    f"{i18n.t('hud_confidence')}: {confidence} ({local_score:.0f})  ·  "
+                    f"{i18n.t('hud_score')}: {local_score:.1f} / 100",
+                    "score",
+                    True,
+                ),
+                (
+                    f"{i18n.t('hud_dx')}: {m['dx']:+.1f}  ·  "
+                    f"{i18n.t('hud_dy')}: {m['dy']:+.1f}  ·  "
+                    f"{i18n.t('hud_dist')}: {m['dist']:.1f} {px}",
+                    "metric",
+                    True,
+                ),
+                (
+                    f"{i18n.t('hud_guide')}: {guide}  ·  "
+                    f"{i18n.t('hud_status')}: {status_text}",
+                    "success" if all_aligned else "alert",
+                    True,
+                ),
+            ]
         else:
             target_names = " + ".join(VisionEngine._target_display_name(i18n, item) for item in targets)
-            rows.append((f"{i18n.t('hud_source')}: {target_names}", "normal", True))
-            # 多目标按目标分别呈现偏差和调节方向
+            rows[0] = (
+                f"{i18n.t('hud_reference')}: {ref_text}  ·  {i18n.t('hud_source')}: {target_names}",
+                "normal",
+                True,
+            )
+            # 多目标各占一行并同时呈现偏差和调节方向
             for item in targets:
                 metric_text, guide, _dx, _dy, dist = VisionEngine._compact_metric_line(config, i18n, item)
                 tone = "success" if dist <= tol and config.reference_locked else "metric"
-                rows.append((metric_text, tone, True))
-                rows.append((f"{VisionEngine._target_display_name(i18n, item)} {i18n.t('hud_guide')}: {guide}", "normal", False))
+                rows.append((f"{metric_text}  ·  {i18n.t('hud_guide')}: {guide}", tone, True))
 
-        rows.append((
-            f"{i18n.t('hud_status')}: {status_text}",
-            "success" if all_aligned else "alert",
-            True,
-        ))
+            rows.append((
+                f"{i18n.t('hud_status')}: {status_text}",
+                "success" if all_aligned else "alert",
+                True,
+            ))
         return rows, targets, all_aligned
 
     @staticmethod
